@@ -392,6 +392,9 @@ private class HorizontalCandidateView: NSView {
 @objc(VTHorizontalCandidateController)
 public class HorizontalCandidateController: CandidateController {
     private var candidateView: HorizontalCandidateView
+    // The container that holds all candidate subviews; embedded inside the
+    // Liquid Glass effect so the glass keeps the content legible.
+    private let contentContainer = NSView()
     private var prevPageButton: NSButton
     private var nextPageButton: NSButton
     private var currentPage: UInt = 0
@@ -410,21 +413,25 @@ public class HorizontalCandidateController: CandidateController {
         panel.level = NSWindow.Level(Int(kCGPopUpMenuWindowLevel) + 1)
         panel.hasShadow = true
 
-        if bigSurOrHigher {
-            panel.backgroundColor = .clear
-            panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
 
-            let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 0, height: 0))
-            effect.blendingMode = .behindWindow
-            effect.material = .popover
-            effect.state = .active
-            effect.maskImage = .mask(withCornerRadius: 4)
-            panel.contentView = effect
-        }
+        let glassView = NSGlassEffectView(frame: NSRect(x: 0, y: 0, width: 0, height: 0))
+        glassView.cornerRadius = kGlassCornerRadius
+        glassView.style = .clear
+        glassView.tintColor = kGlassDimTint
+        glassView.autoresizingMask = [.width, .height]
+        contentContainer.frame = glassView.bounds
+        contentContainer.autoresizingMask = [.width, .height]
+        contentContainer.wantsLayer = true
+        contentContainer.layer?.cornerRadius = kGlassCornerRadius
+        contentContainer.layer?.masksToBounds = true
+        glassView.contentView = contentContainer
+        panel.contentView = glassView
 
         contentRect.origin = NSPoint.zero
         candidateView = HorizontalCandidateView(frame: contentRect)
-        panel.contentView?.addSubview(candidateView)
+        contentContainer.addSubview(candidateView)
         panel.setAccessibilityRole(.group)
 
         contentRect.size = NSSize(width: 36.0, height: 20.0)
@@ -448,8 +455,8 @@ public class HorizontalCandidateController: CandidateController {
             prevPageButton.title = "«"
         }
 
-        panel.contentView?.addSubview(nextPageButton)
-        panel.contentView?.addSubview(prevPageButton)
+        contentContainer.addSubview(nextPageButton)
+        contentContainer.addSubview(prevPageButton)
 
         super.init(window: panel)
 

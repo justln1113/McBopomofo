@@ -109,13 +109,12 @@ private let kCandidateTextLeftMargin: CGFloat = 8.0
 private let kCandidateTextPaddingWithMandatedTableViewPadding: CGFloat = 18.0
 private let kCandidateTextLeftMarginWithMandatedTableViewPadding: CGFloat = 0.0
 
-// Only used in macOS 10.15 (Catalina) or lower
-private class BackgroundView: NSView {
-    override func draw(_: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        NSBezierPath.fill(bounds)
-    }
-}
+// The corner radius for the Liquid Glass candidate window. Shared with the
+// horizontal candidate controller.
+let kGlassCornerRadius: CGFloat = 16.0
+// A slight dim applied to the clear glass so candidate text stays legible on
+// any background. Shared with the horizontal candidate controller.
+let kGlassDimTint = NSColor(white: 0, alpha: 0.15)
 
 private protocol VerticalCandidateTableViewDelegate: AnyObject {
     func view(
@@ -227,6 +226,9 @@ private class VerticalCandidateTableView: NSTableView {
 @objc(VTVerticalCandidateController)
 public class VerticalCandidateController: CandidateController {
     private var keyLabelStripView: VerticalKeyLabelStripView
+    // The container that holds all candidate subviews; embedded inside the
+    // Liquid Glass effect so the glass keeps the content legible.
+    private let contentContainer = NSView()
     private var scrollView: NSScrollView
     private var tableView: VerticalCandidateTableView
     private var candidateTextParagraphStyle: NSMutableParagraphStyle
@@ -249,19 +251,21 @@ public class VerticalCandidateController: CandidateController {
         panel.level = NSWindow.Level(Int(kCGPopUpMenuWindowLevel) + 1)
         panel.hasShadow = true
 
-        if bigSurOrHigher {
-            panel.backgroundColor = .clear
-            panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
 
-            let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 0, height: 0))
-            effect.blendingMode = .behindWindow
-            effect.material = .popover
-            effect.state = .active
-            effect.maskImage = .mask(withCornerRadius: 4)
-            panel.contentView = effect
-        } else {
-            panel.contentView = BackgroundView()
-        }
+        let glassView = NSGlassEffectView(frame: NSRect(x: 0, y: 0, width: 0, height: 0))
+        glassView.cornerRadius = kGlassCornerRadius
+        glassView.style = .clear
+        glassView.tintColor = kGlassDimTint
+        glassView.autoresizingMask = [.width, .height]
+        contentContainer.frame = glassView.bounds
+        contentContainer.autoresizingMask = [.width, .height]
+        contentContainer.wantsLayer = true
+        contentContainer.layer?.cornerRadius = kGlassCornerRadius
+        contentContainer.layer?.masksToBounds = true
+        glassView.contentView = contentContainer
+        panel.contentView = glassView
 
         tooltipView = NSTextField(frame: NSRect.zero)
         tooltipView.isEditable = false
@@ -275,7 +279,7 @@ public class VerticalCandidateController: CandidateController {
         var stripRect = contentRect
         stripRect.size.width = 10.0
         keyLabelStripView = VerticalKeyLabelStripView(frame: stripRect)
-        panel.contentView?.addSubview(keyLabelStripView)
+        contentContainer.addSubview(keyLabelStripView)
 
         var scrollViewRect = contentRect
         scrollViewRect.origin.x = stripRect.size.width
@@ -311,7 +315,7 @@ public class VerticalCandidateController: CandidateController {
         }
 
         scrollView.documentView = tableView
-        panel.contentView?.addSubview(scrollView)
+        contentContainer.addSubview(scrollView)
 
         let paraStyle = NSMutableParagraphStyle()
         paraStyle.setParagraphStyle(NSParagraphStyle.default)
@@ -631,7 +635,7 @@ extension VerticalCandidateController: NSTableViewDataSource, NSTableViewDelegat
             let size = tooltipView.intrinsicContentSize
             tooltipWidth = size.width + tooltipPadding * 2
             tooltipHeight = size.height + tooltipPadding * 2
-            window?.contentView?.addSubview(tooltipView)
+            contentContainer.addSubview(tooltipView)
         } else {
             tooltipView.removeFromSuperview()
         }
@@ -715,16 +719,3 @@ extension VerticalCandidateController: VerticalCandidateTableViewDelegate {
     }
 }
 
-extension NSImage {
-    static func mask(withCornerRadius radius: CGFloat) -> NSImage {
-        let image = NSImage(size: NSSize(width: radius * 2, height: radius * 2), flipped: false) {
-            NSBezierPath(roundedRect: $0, xRadius: radius, yRadius: radius).fill()
-            NSColor.black.set()
-            return true
-        }
-
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
-    }
-}

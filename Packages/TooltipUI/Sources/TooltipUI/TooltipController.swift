@@ -23,10 +23,11 @@
 
 import Cocoa
 
+private let kTooltipPadding: CGFloat = 6.0
+private let kTooltipCornerRadius: CGFloat = 12.0
+
 /// The window controller for showing tooltops.
 public class TooltipController: NSWindowController {
-    private let backgroundColor = NSColor(
-        calibratedHue: 0.16, saturation: 0.22, brightness: 0.97, alpha: 1.0)
     private var messageTextField: NSTextField
     private var tooltip: String = "" {
         didSet {
@@ -43,16 +44,27 @@ public class TooltipController: NSWindowController {
             contentRect: contentRect, styleMask: styleMask, backing: .buffered, defer: false)
         panel.level = NSWindow.Level(Int(kCGPopUpMenuWindowLevel) + 1)
         panel.hasShadow = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
 
         messageTextField = NSTextField()
         messageTextField.isEditable = false
         messageTextField.isSelectable = false
         messageTextField.isBezeled = false
-        messageTextField.textColor = .black
-        messageTextField.drawsBackground = true
-        messageTextField.backgroundColor = backgroundColor
+        messageTextField.textColor = .labelColor
+        messageTextField.drawsBackground = false
         messageTextField.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
-        panel.contentView?.addSubview(messageTextField)
+
+        let glassView = NSGlassEffectView(frame: contentRect)
+        glassView.cornerRadius = kTooltipCornerRadius
+        glassView.style = .clear
+        glassView.tintColor = NSColor(white: 0, alpha: 0.15)
+        glassView.autoresizingMask = [.width, .height]
+        let container = NSView(frame: contentRect)
+        container.autoresizingMask = [.width, .height]
+        container.addSubview(messageTextField)
+        glassView.contentView = container
+        panel.contentView = glassView
 
         super.init(window: panel)
     }
@@ -126,11 +138,17 @@ public class TooltipController: NSWindowController {
 
     private func adjustSize() {
         let attrString = messageTextField.attributedStringValue
-        var rect = attrString.boundingRect(
+        let textRect = attrString.boundingRect(
             with: NSSize(width: 1600.0, height: 1600.0), options: .usesLineFragmentOrigin)
-        rect.size.width += 10
-        messageTextField.frame = rect
-        window?.setFrame(rect, display: true)
+        let textWidth = ceil(textRect.size.width) + 4
+        let textHeight = ceil(textRect.size.height)
+        messageTextField.frame = NSRect(
+            x: kTooltipPadding, y: kTooltipPadding, width: textWidth, height: textHeight)
+        let windowRect = NSRect(
+            x: 0, y: 0,
+            width: textWidth + kTooltipPadding * 2,
+            height: textHeight + kTooltipPadding * 2)
+        window?.setFrame(windowRect, display: true)
     }
 
 }

@@ -37,6 +37,7 @@ private class NotifierWindow: NSWindow {
 
 private let kWindowWidth: CGFloat = 160.0
 private let kWindowHeight: CGFloat = 80.0
+private let kNotifierCornerRadius: CGFloat = 16.0
 
 public class NotifierController: NSWindowController, NotifierWindowDelegate {
     private var messageTextField: NSTextField
@@ -63,13 +64,7 @@ public class NotifierController: NSWindowController, NotifierWindowDelegate {
         }
     }
     private var shouldStay: Bool = false
-    private var backgroundColor: NSColor = .black {
-        didSet {
-            self.window?.backgroundColor = backgroundColor
-            self.messageTextField.backgroundColor = backgroundColor
-        }
-    }
-    private var foregroundColor: NSColor = .white {
+    private var foregroundColor: NSColor = .labelColor {
         didSet {
             self.messageTextField.textColor = foregroundColor
         }
@@ -108,7 +103,8 @@ public class NotifierController: NSWindowController, NotifierWindowDelegate {
         let panel = NotifierWindow(contentRect: windowRect, styleMask: styleMask, backing: .buffered, defer: false)
         panel.level = NSWindow.Level(Int(kCGPopUpMenuWindowLevel))
         panel.hasShadow = true
-        panel.backgroundColor = backgroundColor
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
 
         messageTextField = NSTextField()
         messageTextField.frame = contentRect
@@ -116,10 +112,19 @@ public class NotifierController: NSWindowController, NotifierWindowDelegate {
         messageTextField.isSelectable = false
         messageTextField.isBezeled = false
         messageTextField.textColor = foregroundColor
-        messageTextField.drawsBackground = true
-        messageTextField.backgroundColor = backgroundColor
+        messageTextField.drawsBackground = false
         messageTextField.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
-        panel.contentView?.addSubview(messageTextField)
+
+        let glassView = NSGlassEffectView(frame: contentRect)
+        glassView.cornerRadius = kNotifierCornerRadius
+        glassView.style = .clear
+        glassView.tintColor = NSColor(white: 0, alpha: 0.15)
+        glassView.autoresizingMask = [.width, .height]
+        let container = NSView(frame: contentRect)
+        container.autoresizingMask = [.width, .height]
+        container.addSubview(messageTextField)
+        glassView.contentView = container
+        panel.contentView = glassView
 
         super.init(window: panel)
 
