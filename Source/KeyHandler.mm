@@ -457,6 +457,22 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     // see if it's valid BPMF reading
     bool isValidKey = _bpmfReadingBuffer->isValidKey((char)charCode);
     if (!skipBpmfHandling && isValidKey) {
+        // A lone tone marker may be left dangling in the reading buffer (for
+        // example a stray tone key pressed before any syllable was started, or
+        // a prior-tone change that matched no reading and was not cleared).
+        // Such a residue would otherwise merge with the next syllable's first
+        // component and form an invalid "consonant + tone" reading, producing a
+        // spurious beep that also eats the correct key. If the incoming key is
+        // a syllable component rather than another tone marker, drop the stray
+        // tone first so the new syllable starts clean.
+        if (_bpmfReadingBuffer->hasToneMarkerOnly()) {
+            Formosa::Mandarin::BopomofoReadingBuffer probe(_bpmfReadingBuffer->keyboardLayout());
+            probe.combineKey((char)charCode);
+            if (!probe.hasToneMarkerOnly()) {
+                _bpmfReadingBuffer->clear();
+            }
+        }
+
         _bpmfReadingBuffer->combineKey((char)charCode);
         keyConsumedByReading = YES;
 
@@ -511,6 +527,18 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
             errorCallback();
 
             if (Preferences.keepReadingUponCompositionError) {
+                // Keep the reading so the user can correct it instead of losing
+                // the whole syllable. Drop the tone marker that triggered the
+                // failed composition: otherwise the tone stays in the buffer and
+                // the very next keystroke immediately re-triggers another failed
+                // composition, producing a cascade of beeps. Without the tone,
+                // the partial syllable stays editable -- re-typing a
+                // consonant/medial/vowel replaces the matching component (the
+                // override semantics of BopomofoSyllable), and typing a tone
+                // re-attempts the composition.
+                if (_bpmfReadingBuffer->hasToneMarker()) {
+                    _bpmfReadingBuffer->backspace();
+                }
                 stateCallback([self buildInputtingState]);
                 return YES;
             }

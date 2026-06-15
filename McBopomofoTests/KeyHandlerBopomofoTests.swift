@@ -638,6 +638,110 @@ class KeyHandlerBopomofoTests: XCTestCase {
         XCTAssertTrue(state is InputState.EmptyIgnoringPreviousState, "\(state)")
     }
 
+    // When keeping the reading upon a composition error, the tone marker that
+    // triggered the failed composition must be dropped so the partial syllable
+    // stays editable (re-typing a component replaces it) and the next keystroke
+    // does not immediately re-trigger another failed composition.
+    func testKeepReadingUponCompositionErrorStripsTone() {
+        let associatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
+        let keepReadingUponCompositionError = Preferences.keepReadingUponCompositionError
+        Preferences.associatedPhrasesEnabled = false
+        Preferences.keepReadingUponCompositionError = true
+        defer {
+            Preferences.associatedPhrasesEnabled = associatedPhrasesEnabled
+            Preferences.keepReadingUponCompositionError = keepReadingUponCompositionError
+        }
+
+        var state: InputState = InputState.Empty()
+        var errorCalled = false
+
+        // "xj83" -> ㄌㄨㄚˇ, which is not a valid reading.
+        for key in Array("xj83").map({ String($0) }) {
+            let input = KeyHandlerInput(
+                inputText: key, keyCode: 0, charCode: charCode(key), flags: [],
+                isVerticalMode: false)
+            handler.handle(input: input, state: state) { newState in
+                state = newState
+            } errorCallback: {
+                errorCalled = true
+            }
+        }
+
+        // The composition error beeps, but the reading is kept with the failed
+        // tone stripped, leaving the editable partial syllable ㄌㄨㄚ.
+        XCTAssertTrue(errorCalled)
+        XCTAssertTrue(state is InputState.Inputting, "\(state)")
+        if let state = state as? InputState.Inputting {
+            XCTAssertEqual(state.composingBuffer, "ㄌㄨㄚ")
+        }
+
+        // Re-typing a vowel replaces the wrong one in place, no new error.
+        errorCalled = false
+        let correction = KeyHandlerInput(
+            inputText: "i", keyCode: 0, charCode: charCode("i"), flags: [],
+            isVerticalMode: false)
+        handler.handle(input: correction, state: state) { newState in
+            state = newState
+        } errorCallback: {
+            errorCalled = true
+        }
+        XCTAssertFalse(errorCalled)
+        XCTAssertTrue(state is InputState.Inputting, "\(state)")
+        if let state = state as? InputState.Inputting {
+            XCTAssertEqual(state.composingBuffer, "ㄌㄨㄛ")
+        }
+    }
+
+    // A stray, dangling tone marker left in the reading buffer must not merge
+    // with the next syllable's first component and turn a perfectly valid
+    // reading into an invalid "consonant + tone" that beeps and eats the key.
+    func testStrayToneMarkerDoesNotEatNextSyllable() {
+        let associatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
+        let allowChangingPriorTone = Preferences.allowChangingPriorTone
+        Preferences.associatedPhrasesEnabled = false
+        Preferences.allowChangingPriorTone = false
+        defer {
+            Preferences.associatedPhrasesEnabled = associatedPhrasesEnabled
+            Preferences.allowChangingPriorTone = allowChangingPriorTone
+        }
+
+        var state: InputState = InputState.Empty()
+        var errorCalled = false
+
+        // A stray tone marker keyed with nothing else in the buffer.
+        let strayTone = KeyHandlerInput(
+            inputText: "3", keyCode: 0, charCode: charCode("3"), flags: [],
+            isVerticalMode: false)
+        handler.handle(input: strayTone, state: state) { newState in
+            state = newState
+        } errorCallback: {
+            errorCalled = true
+        }
+        XCTAssertFalse(errorCalled)
+        XCTAssertTrue(state is InputState.Inputting, "\(state)")
+        if let state = state as? InputState.Inputting {
+            XCTAssertEqual(state.composingBuffer, "ˇ")
+        }
+
+        // "su3" -> ㄋㄧˇ (你). The stray tone must be discarded when ㄋ arrives,
+        // so this composes cleanly without any spurious beep.
+        for key in Array("su3").map({ String($0) }) {
+            let input = KeyHandlerInput(
+                inputText: key, keyCode: 0, charCode: charCode(key), flags: [],
+                isVerticalMode: false)
+            handler.handle(input: input, state: state) { newState in
+                state = newState
+            } errorCallback: {
+                errorCalled = true
+            }
+        }
+        XCTAssertFalse(errorCalled)
+        XCTAssertTrue(state is InputState.Inputting, "\(state)")
+        if let state = state as? InputState.Inputting {
+            XCTAssertEqual(state.composingBuffer, "你")
+        }
+    }
+
     func testInputting() {
         let associatedPhrasesEnabled = Preferences.associatedPhrasesEnabled
         Preferences.associatedPhrasesEnabled = false

@@ -319,7 +319,7 @@ class Preferences: NSObject {
     @UserDefault(key: kEscToCleanInputBufferKey, defaultValue: false)
     @objc static var escToCleanInputBuffer: Bool
 
-    @UserDefault(key: kKeepReadingUponCompositionError, defaultValue: false)
+    @UserDefault(key: kKeepReadingUponCompositionError, defaultValue: true)
     @objc static var keepReadingUponCompositionError: Bool
 
     // MARK: Optional settings
