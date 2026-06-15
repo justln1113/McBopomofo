@@ -39,6 +39,12 @@ private let kMinKeyLabelSize: CGFloat = 10
 
 internal var gCurrentCandidateController: CandidateController?
 
+/// A single, process-wide `IMKCandidates`. macOS creates one
+/// `IMKInputController` per text-input client, so this must NOT be a per-
+/// instance property — multiple `IMKCandidates` bound to the same server race
+/// and can dead-lock the input session when switching input methods.
+private var gSharedIMKCandidates: IMKCandidates?
+
 extension CandidateController {
     static let horizontal = HorizontalCandidateController()
     static let vertical = VerticalCandidateController()
@@ -55,6 +61,119 @@ class McBopomofoInputMethodController: IMKInputController {
     var keyHandler: KeyHandler = KeyHandler()
     var state: InputState = InputState.Empty()
     lazy var charInfo: SystemCharacterInfo? = try? SystemCharacterInfo()
+
+    // MARK: - Native IMKCandidates (system-native candidate window)
+
+    /// Whether to use the system-native `IMKCandidates` window (Liquid Glass on
+    /// macOS 26) instead of the custom `CandidateUI` window. Safety valve — turn
+    /// off and re-login to fall back to the custom window:
+    ///   defaults write org.openvanilla.inputmethod.McBopomofo UseIMKCandidatesWindow -bool NO
+    var usesIMKCandidates: Bool {
+        (UserDefaults.standard.object(forKey: "UseIMKCandidatesWindow") as? Bool) ?? true
+    }
+
+    /// The shared system-native candidate window, created once against the
+    /// first controller's IMKServer and reused by every controller instance.
+    var imkCandidates: IMKCandidates {
+        if let shared = gSharedIMKCandidates {
+            return shared
+        }
+        let created: IMKCandidates = IMKCandidates(
+            server: server(), panelType: kIMKSingleColumnScrollingCandidatePanel)
+        gSharedIMKCandidates = created
+        return created
+    }
+
+    /// Supplies the candidate strings to `imkCandidates` (called as a result of
+    /// `imkCandidates.updateCandidates()`).
+    override func candidates(_ sender: Any!) -> [Any]! {
+        guard let provider = state as? CandidateProvider else { return [] }
+        var result: [String] = []
+        for index in 0..<provider.candidateCount {
+            result.append(provider.candidate(at: index))
+        }
+        return result
+    }
+
+    /// Called by `imkCandidates` when the user picks a candidate. Maps the
+    /// selected string back to an index and reuses the existing selection path.
+    override func candidateSelected(_ candidateString: NSAttributedString!) {
+        let selected = candidateString?.string ?? ""
+        guard let provider = state as? CandidateProvider else { return }
+        for index in 0..<provider.candidateCount where provider.candidate(at: index) == selected {
+            candidateController(
+                gCurrentCandidateController ?? .vertical, didSelectCandidateAtIndex: UInt(index))
+            break
+        }
+    }
+
+    /// Configures and shows the system-native candidate window. A hidden custom
+    /// controller is kept around so the C++ KeyHandler always has a valid
+    /// `gCurrentCandidateController` to talk to (for Esc/cancel, etc.).
+    private func showNativeCandidates(for state: InputState, client: Any!) {
+        currentClient = client
+        gCurrentCandidateController?.delegate = nil
+        gCurrentCandidateController?.visible = false
+        gCurrentCandidateController = .vertical
+
+        let candidateKeys = Preferences.candidateKeys
+        let keyLabels =
+            candidateKeys.count >= 4 ? Array(candidateKeys) : Array(Preferences.defaultCandidateKeys)
+        gCurrentCandidateController?.keyLabels = keyLabels.map {
+            CandidateKeyLabel(key: String($0), displayedText: String($0))
+        }
+        gCurrentCandidateController?.delegate = self
+
+        imkCandidates.setPanelType(nativePanelType(for: state))
+        imkCandidates.update()
+        imkCandidates.show(kIMKLocateCandidatesBelowHint)
+    }
+
+    /// Chooses the native panel layout, mirroring the custom window's logic:
+    /// vertical text mode or over-long candidates force a single column;
+    /// otherwise honor the horizontal-candidate-list preference (a single-row
+    /// stepping panel — the public IMKCandidates equivalent of Apple's own
+    /// horizontal Zhuyin candidates, which use a private framework).
+    private func nativePanelType(for state: InputState) -> IMKCandidatePanelType {
+        var verticalText = false
+        var candidates: [InputState.Candidate] = []
+        switch state {
+        case let state as InputState.ChoosingCandidate:
+            verticalText = state.useVerticalMode
+            candidates = state.candidates
+        case let state as InputState.AssociatedPhrasesPlain:
+            verticalText = state.useVerticalMode
+            candidates = state.candidates
+        case let state as InputState.AssociatedPhrases:
+            verticalText = state.useVerticalMode
+            candidates = state.candidates
+        default:
+            return kIMKSingleColumnScrollingCandidatePanel
+        }
+        if verticalText {
+            return kIMKSingleColumnScrollingCandidatePanel
+        }
+        if (candidates.map { $0.displayText.count }.max() ?? 0) > 8 {
+            return kIMKSingleColumnScrollingCandidatePanel
+        }
+        return Preferences.useHorizontalCandidateList
+            ? kIMKSingleRowSteppingCandidatePanel : kIMKSingleColumnScrollingCandidatePanel
+    }
+
+    /// Keys the native candidate window should handle (navigation + selection).
+    /// Everything else (Esc, Backspace, continued typing) falls through to the
+    /// KeyHandler so existing behavior is preserved.
+    private func shouldForwardToNativeCandidates(_ event: NSEvent) -> Bool {
+        // arrows, home/end, page up/down, return, keypad-enter, space
+        let navKeyCodes: Set<UInt16> = [123, 124, 125, 126, 115, 119, 116, 121, 36, 76, 49]
+        if navKeyCodes.contains(event.keyCode) {
+            return true
+        }
+        if let chars = event.charactersIgnoringModifiers, chars.count == 1 {
+            return Preferences.candidateKeys.contains(chars)
+        }
+        return false
+    }
 
     // Share the stored issues, so a set of issues is shown as notification only once.
     static var latestUserFileIssues: [String] = []
@@ -263,6 +382,16 @@ class McBopomofoInputMethodController: IMKInputController {
             forCharacterIndex: 0, lineHeightRectangle: &textFrame)
         let useVerticalMode =
             (attributes?["IMKTextOrientation"] as? NSNumber)?.intValue == 0 || false
+        // When the system-native candidate window is up, let it handle
+        // navigation and selection keys; everything else falls through to the
+        // KeyHandler (Esc to cancel, Backspace, continued typing, etc.).
+        if usesIMKCandidates, state is CandidateProvider, imkCandidates.isVisible(),
+            shouldForwardToNativeCandidates(event)
+        {
+            imkCandidates.interpretKeyEvents([event])
+            return true
+        }
+
         let input = KeyHandlerInput(event: event, isVerticalMode: useVerticalMode)
 
         let result = keyHandler.handle(input: input, state: state) { newState in
@@ -394,6 +523,11 @@ extension McBopomofoInputMethodController {
     func handle(state newState: InputState, client: Any?) {
         let previous = state
         state = newState
+
+        // Hide the native candidate window whenever we leave a candidate state.
+        if usesIMKCandidates, !(newState is CandidateProvider) {
+            imkCandidates.hide()
+        }
 
         switch newState {
         case let newState as InputState.Deactivated:
@@ -785,6 +919,10 @@ extension McBopomofoInputMethodController {
     }
 
     private func show(candidateWindowWith state: InputState, client: Any!) {
+        if usesIMKCandidates, state is CandidateProvider {
+            showNativeCandidates(for: state, client: client)
+            return
+        }
         let useVerticalMode: Bool = {
             var useVerticalMode = false
             var candidates: [InputState.Candidate] = []
