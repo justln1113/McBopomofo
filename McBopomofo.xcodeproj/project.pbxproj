@@ -128,8 +128,8 @@
 
 /* Begin PBXFileReference section */
 		6A0D4EA215FC0D2D00ABF4B3 /* McBopomofo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = McBopomofo.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6A0D4EEF15FC0DA600ABF4B3 /* Bopomofo.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Bopomofo.tiff; sourceTree = "<group>"; };
-		6A0D4EF015FC0DA600ABF4B3 /* Bopomofo@2x.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = "Bopomofo@2x.tiff"; sourceTree = "<group>"; };
+		6A0D4EEF15FC0DA600ABF4B3 /* Bopomofo.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = BopomofoTemplate.tiff; sourceTree = "<group>"; };
+		6A0D4EF015FC0DA600ABF4B3 /* Bopomofo@2x.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = "BopomofoTemplate@2x.tiff"; sourceTree = "<group>"; };
 		6A0D4EF515FC0DA600ABF4B3 /* McBopomofo-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "McBopomofo-Info.plist"; sourceTree = "<group>"; };
 		6A0D4EF615FC0DA600ABF4B3 /* McBopomofo-Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "McBopomofo-Prefix.pch"; sourceTree = "<group>"; };
 		6A0D4F2015FC0EB100ABF4B3 /* Mandarin.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Mandarin.cpp; sourceTree = "<group>"; };
@@ -185,8 +185,8 @@
 		6ADF5B162BA513E000577D98 /* UTF8Helper.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = UTF8Helper.cpp; sourceTree = "<group>"; };
 		6ADF5B172BA513E000577D98 /* UTF8Helper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = UTF8Helper.h; sourceTree = "<group>"; };
 		6ADF5B182BA513E000577D98 /* AssociatedPhrasesV2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AssociatedPhrasesV2.h; sourceTree = "<group>"; };
-		6AE210B015FC63CC003659FE /* PlainBopomofo.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = PlainBopomofo.tiff; sourceTree = "<group>"; };
-		6AE210B115FC63CC003659FE /* PlainBopomofo@2x.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = "PlainBopomofo@2x.tiff"; sourceTree = "<group>"; };
+		6AE210B015FC63CC003659FE /* PlainBopomofo.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = PlainBopomofoTemplate.tiff; sourceTree = "<group>"; };
+		6AE210B115FC63CC003659FE /* PlainBopomofo@2x.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = "PlainBopomofoTemplate@2x.tiff"; sourceTree = "<group>"; };
 		6AFF97F0253B299E007F1C49 /* NonModalAlertWindowController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = NonModalAlertWindowController.xib; sourceTree = "<group>"; };
 		B058C5262AC9DF51002EDD66 /* ServiceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceProvider.swift; sourceTree = "<group>"; };
 		B0781B362ACA2655003D9F75 /* en */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/ServicesMenu.strings; sourceTree = "<group>"; };

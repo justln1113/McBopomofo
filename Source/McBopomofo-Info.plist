@@ -30,8 +30,6 @@
 				<string>。</string>
 				<key>TISIntendedLanguage</key>
 				<string>zh-Hant</string>
-				<key>tsInputModeAlternateMenuIconFileKey</key>
-				<string>Bopomofo.tiff</string>
 				<key>tsInputModeCharacterRepertoireKey</key>
 				<array>
 					<string>Hant</string>
@@ -43,10 +41,12 @@
 				<true/>
 				<key>tsInputModeKeyEquivalentModifiersKey</key>
 				<integer>4608</integer>
+				<key>tsInputModeAlternateMenuIconFileKey</key>
+				<string>BopomofoTemplate.tiff</string>
 				<key>tsInputModeMenuIconFileKey</key>
-				<string>Bopomofo.tiff</string>
+				<string>BopomofoTemplate.tiff</string>
 				<key>tsInputModePaletteIconFileKey</key>
-				<string>Bopomofo.tiff</string>
+				<string>BopomofoTemplate.tiff</string>
 				<key>tsInputModePrimaryInScriptKey</key>
 				<true/>
 				<key>tsInputModeScriptKey</key>
@@ -58,8 +58,6 @@
 				<string>。</string>
 				<key>TISIntendedLanguage</key>
 				<string>zh-Hant</string>
-				<key>tsInputModeAlternateMenuIconFileKey</key>
-				<string>PlainBopomofo.tiff</string>
 				<key>tsInputModeCharacterRepertoireKey</key>
 				<array>
 					<string>Hant</string>
@@ -71,10 +69,12 @@
 				<true/>
 				<key>tsInputModeKeyEquivalentModifiersKey</key>
 				<integer>4608</integer>
+				<key>tsInputModeAlternateMenuIconFileKey</key>
+				<string>PlainBopomofoTemplate.tiff</string>
 				<key>tsInputModeMenuIconFileKey</key>
-				<string>PlainBopomofo.tiff</string>
+				<string>PlainBopomofoTemplate.tiff</string>
 				<key>tsInputModePaletteIconFileKey</key>
-				<string>PlainBopomofo.tiff</string>
+				<string>PlainBopomofoTemplate.tiff</string>
 				<key>tsInputModePrimaryInScriptKey</key>
 				<true/>
 				<key>tsInputModeScriptKey</key>
@@ -335,6 +335,6 @@
 		<string>Hans</string>
 	</array>
 	<key>tsInputMethodIconFileKey</key>
-	<string>Bopomofo.tiff</string>
+	<string>BopomofoTemplate.tiff</string>
 </dict>
 </plist>
