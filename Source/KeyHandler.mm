@@ -48,6 +48,11 @@
 InputMode InputModeBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Bopomofo";
 InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.PlainBopomofo";
 
+// The Up-arrow quick switch only cycles through this many top candidates so it
+// stays a fast "flip between the common homophones" gesture rather than a walk
+// through the entire candidate list.
+static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
+
 @implementation KeyHandler {
     std::shared_ptr<Formosa::Gramambular2::LanguageModel> _emptySharedPtr;
 
@@ -661,7 +666,7 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
 
     // MARK: Tab
     if (input.isTab) {
-        return [self _handleTabState:state shiftIsHold:input.isShiftHold stateCallback:stateCallback errorCallback:errorCallback];
+        return [self _handleTabState:state shiftIsHold:input.isShiftHold maxCandidateCount:0 stateCallback:stateCallback errorCallback:errorCallback];
     }
 
     // MARK: Cursor backward
@@ -682,6 +687,21 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     // MARK: End
     if (input.isEnd || emacsKey == McBopomofoEmacsKeyEnd) {
         return [self _handleEndWithState:state stateCallback:stateCallback errorCallback:errorCallback];
+    }
+
+    // MARK: Up arrow — quick-switch the candidate under the cursor in place
+    // In horizontal typing the Up arrow is otherwise an "absorbed" (idle) key.
+    // Repurpose it to cycle the word/character under the cursor among its top few
+    // candidates (e.g. 在 -> 再) right inside the composing buffer, without
+    // opening the candidate window. This mirrors the Tab key but is capped to the
+    // first kUpArrowCandidateSwitchLimit candidates so it stays quick instead of
+    // running through the whole list; Shift+Up cycles backwards. We ignore it
+    // when Control/Command/Option is held so system and app shortcuts still work.
+    // In vertical typing the Up arrow is the cursor-backward key and is handled
+    // earlier, so this only fires when typing horizontally.
+    if (input.isUp && !input.isControlHold && !input.isCommandHold && !input.isOptionHold &&
+        [state isKindOfClass:[InputStateInputting class]] && _bpmfReadingBuffer->isEmpty()) {
+        return [self _handleTabState:state shiftIsHold:input.isShiftHold maxCandidateCount:kUpArrowCandidateSwitchLimit stateCallback:stateCallback errorCallback:errorCallback];
     }
 
     // MARK: AbsorbedArrowKey
@@ -842,7 +862,7 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     return NO;
 }
 
-- (BOOL)_handleTabState:(InputState *)state shiftIsHold:(BOOL)shiftIsHold stateCallback:(void (^)(InputState *))stateCallback errorCallback:(void (^)(void))errorCallback
+- (BOOL)_handleTabState:(InputState *)state shiftIsHold:(BOOL)shiftIsHold maxCandidateCount:(NSUInteger)maxCandidateCount stateCallback:(void (^)(InputState *))stateCallback errorCallback:(void (^)(void))errorCallback
 {
     if (!_grid->length()) {
         return NO;
@@ -863,6 +883,14 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
     if (candidates.count == 0) {
         errorCallback();
         return YES;
+    }
+
+    // When maxCandidateCount > 0, only cycle through the top N candidates (by
+    // frequency). This keeps the Up-arrow quick switch from running through the
+    // entire, possibly very long, candidate list. 0 means no limit (Tab key).
+    NSUInteger cycleCount = candidates.count;
+    if (maxCandidateCount > 0 && maxCandidateCount < cycleCount) {
+        cycleCount = maxCandidateCount;
     }
 
     auto nodeIter = _latestWalk.findNodeAt(self.actualCandidateCursorIndex);
@@ -887,7 +915,7 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
             // If the first candidate is the value of the current node, we use next
             // one.
             if (shiftIsHold) {
-                currentIndex = candidates.count - 1;
+                currentIndex = cycleCount - 1;
             } else {
                 currentIndex = 1;
             }
@@ -896,7 +924,7 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
         for (InputStateCandidate *candidate : candidates) {
             if (currentNode->reading() == candidate.reading.UTF8String && currentNode->value() == candidate.value.UTF8String) {
                 if (shiftIsHold) {
-                    currentIndex == 0 ? currentIndex = candidates.count - 1 : currentIndex--;
+                    currentIndex == 0 ? currentIndex = cycleCount - 1 : currentIndex--;
                 } else {
                     currentIndex++;
                 }
@@ -906,7 +934,7 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
         }
     }
 
-    if (currentIndex >= candidates.count) {
+    if (currentIndex >= cycleCount) {
         currentIndex = 0;
     }
 
@@ -1285,7 +1313,7 @@ InputMode InputModePlainBopomofo = @"org.openvanilla.inputmethod.McBopomofo.Plai
                     if (Preferences.selectPhraseAfterCursorAsCandidate) {
                         _grid->setCursor(actualPrefixCursorIndex);
                     }
-                    [self _handleTabState:state shiftIsHold:NO stateCallback:stateCallback errorCallback:errorCallback];
+                    [self _handleTabState:state shiftIsHold:NO maxCandidateCount:0 stateCallback:stateCallback errorCallback:errorCallback];
                     _grid->setCursor(prefixCursorIndex);
                     stateCallback([self buildInputtingState]);
                     return YES;
