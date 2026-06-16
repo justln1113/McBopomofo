@@ -91,12 +91,23 @@ def main():
     ap.add_argument("--out", default="model.pt")
     ap.add_argument("--embed-dim", type=int, default=256)
     ap.add_argument("--hidden-dim", type=int, default=512)
-    ap.add_argument("--max-len", type=int, default=128)
-    ap.add_argument("--batch-size", type=int, default=128)
+    # Defaults are sized to stay within ~16GB. The per-step logits tensor is
+    # batch * seq * vocab floats; with vocab ~6k, batch=128/max-len=128 needs
+    # ~1.25GB transient *for logits alone*, which (compounded by the MPS pool
+    # only ever growing) is enough to OOM a 16GB machine. Corpus lines average
+    # ~29 chars, so max-len=96 truncates almost nothing.
+    ap.add_argument("--max-len", type=int, default=96)
+    ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--device", default="cpu",
-                    help="cpu | mps | cuda (mps LSTM can be flaky; see README)")
+                    help="cpu | mps | cuda. cpu is the safe default: stable and "
+                         "memory-bounded. mps is faster but its memory pool only "
+                         "grows; keep batch small and watch the first 200 steps.")
+    # 0 = load in the main process. The dataset is already fully in RAM, so
+    # workers add little; on macOS they use 'spawn', which copies all lines into
+    # each worker -- avoid that memory multiplier by default.
+    ap.add_argument("--num-workers", type=int, default=0)
     ap.add_argument("--log-every", type=int, default=100)
     args = ap.parse_args()
 
@@ -110,7 +121,8 @@ def main():
 
     ds = LineDataset(args.corpus, vocab, args.max_len)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True,
-                    collate_fn=collate, num_workers=2, drop_last=True)
+                    collate_fn=collate, num_workers=args.num_workers,
+                    drop_last=True)
 
     model = CharLSTM(vocab_size, args.embed_dim, args.hidden_dim).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -145,6 +157,11 @@ def main():
                 running = 0.0
                 seen = 0
                 t0 = time.time()
+                # MPS never shrinks its allocation pool on its own; release the
+                # cached blocks periodically so a long run does not creep up to
+                # an OOM. Cheap and a no-op on other backends.
+                if device.type == "mps":
+                    torch.mps.empty_cache()
 
         # Save after each epoch (checkpoint), with everything export needs.
         torch.save({
