@@ -18,12 +18,13 @@ import unicodedata
 
 import regex as re
 
-# Datasets to pull, in priority order. Personal/research use -> license
+# Datasets to pull, interleaved round-robin (see iter_corpus) so the output is a
+# mix rather than 100% of whichever comes first. Personal/research use -> license
 # unrestricted; these are the cleanest native Taiwan Traditional Chinese sources.
 # Each entry: (hf_dataset, config, split, text_field).
 DATASETS = [
     ("zetavg/zh-tw-wikipedia", None, "train", "html"),  # clean 台灣正體 wiki
-    ("liswei/Taiwan-Text-Excellence-2B", None, "train", "text"),  # multi-domain
+    ("liswei/Taiwan-Text-Excellence-2B", None, "train", "text"),  # news/科技/公視/wiki
 ]
 
 # Characters we keep: CJK unified ideographs (+ ext A), Arabic digits, plus the
@@ -115,11 +116,15 @@ def _is_good_line(line: str, ended: bool) -> bool:
 
 
 def iter_corpus(limit_docs: int | None):
-    """Stream documents from the datasets, cleaning and splitting into
-    sentence-ish lines. The caller is responsible for honoring the output-size
-    budget (after dedup) and stopping iteration; this just yields lines."""
+    """Round-robin stream across all datasets, cleaning and splitting into
+    sentence-ish lines, so the output budget is SHARED across sources instead of
+    being filled entirely by whichever dataset comes first. The caller honors the
+    output-size budget (after dedup) and stops iteration; this just yields lines.
+    """
     from datasets import load_dataset
 
+    # Open one streaming iterator per dataset.
+    sources = []
     for name, config, split, field in DATASETS:
         print(f"[prepare] streaming {name} (field={field})", file=sys.stderr)
         try:
@@ -127,19 +132,34 @@ def iter_corpus(limit_docs: int | None):
         except Exception as e:  # noqa: BLE001
             print(f"[prepare] WARN could not load {name}: {e}", file=sys.stderr)
             continue
+        sources.append({"name": name, "field": field, "it": iter(ds),
+                        "docs": 0})
 
-        docs = 0
-        for row in ds:
-            raw = row.get(field) or row.get("text") or ""
-            if not raw:
+    # One document per source per cycle; drop a source when it is exhausted or
+    # hits limit_docs. (Wiki articles are longer than news items, so char
+    # contribution still skews toward the longer source, but every source is now
+    # represented rather than only the first.)
+    while sources:
+        still_active = []
+        for src in sources:
+            try:
+                row = next(src["it"])
+            except StopIteration:
+                print(f"[prepare] {src['name']}: exhausted at {src['docs']} docs",
+                      file=sys.stderr)
                 continue
-            cleaned = clean_text(raw)
-            for line in split_sentences(cleaned):
-                yield line
-            docs += 1
-            if limit_docs and docs >= limit_docs:
-                break
-        print(f"[prepare] {name}: {docs} docs done", file=sys.stderr)
+            raw = row.get(src["field"]) or row.get("text") or ""
+            if raw:
+                cleaned = clean_text(raw)
+                for line in split_sentences(cleaned):
+                    yield line
+            src["docs"] += 1
+            if limit_docs and src["docs"] >= limit_docs:
+                print(f"[prepare] {src['name']}: hit limit-docs {limit_docs}",
+                      file=sys.stderr)
+                continue
+            still_active.append(src)
+        sources = still_active
 
 
 def main():
