@@ -281,6 +281,33 @@ TEST(NeuralRescorerTest, EndToEndWithGridHomophoneProvider) {
       << "selective-softmax homophone set was not wired through from the grid";
 }
 
+TEST(NeuralRescorerTest, UserOverrideIsNotReranked) {
+  // If the top candidate carries explicit user intent (a manual override /
+  // UOM suggestion), the rescorer must NOT flip it, even with a model that
+  // strongly prefers a different value. This protects user-chosen characters
+  // and user-phrase boosts from being overruled by statistics.
+  ReadingGrid grid = BuildYiNiGrid();
+
+  // Force the first syllable to 醫 as if the user had picked it. This sets the
+  // node's override flag, which walkNBest propagates into NBestPath.overridden.
+  ASSERT_TRUE(grid.overrideCandidate(
+      0, "醫", ReadingGrid::Node::OverrideType::kOverrideValueWithHighScore));
+
+  auto candidates = grid.walkNBest(5);
+  ASSERT_FALSE(candidates.empty());
+  // The overridden walk puts 醫你 on top, and the top path must be flagged.
+  ASSERT_EQ(candidates[0].valuesAsStrings(),
+            (std::vector<std::string>{"醫", "你"}));
+  ASSERT_TRUE(candidates[0].hasUserOverride());
+
+  // A model that loves 依 must NOT be allowed to flip the user's 醫.
+  auto model = std::make_shared<RuleBasedMockModel>();
+  NeuralRescorer rescorer(model, /*lambda=*/100.0);
+  const auto& best = rescorer.rerank(candidates);
+  ASSERT_EQ(best.valuesAsStrings(),
+            (std::vector<std::string>{"醫", "你"}));
+}
+
 TEST(NeuralRescorerTest, Timing) {
   // Build a realistic 10-syllable grid and time the full walkNBest -> rerank
   // pipeline with a constant model (isolates orchestration cost from model

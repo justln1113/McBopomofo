@@ -87,6 +87,20 @@ size_t NeuralRescorer::rerankBestIndex(
     return 0;
   }
 
+  // Explicit user intent must not be overridden by a statistical model. The
+  // top candidate (index 0) already reflects any user override / user-phrase
+  // boost via its unigram score, so if it carries an override we keep it as-is
+  // and skip re-ranking entirely. (We check candidates[0] specifically: that is
+  // the walk's chosen path, the one the user's override/boost was designed to
+  // make win.) See NBestPath::overridden for the known gap re: user-phrase
+  // provenance that this flag does not yet cover.
+  if (candidates[0].hasUserOverride()) {
+    if (outScores != nullptr) {
+      (*outScores)[0] = candidates[0].score;
+    }
+    return 0;
+  }
+
   size_t bestIndex = 0;
   double bestScore = -std::numeric_limits<double>::infinity();
 

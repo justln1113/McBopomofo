@@ -267,9 +267,21 @@ std::vector<ReadingGrid::NBestPath> ReadingGrid::walkNBest(size_t k) {
         continue;
       }
 
+      std::vector<BeamEntry>& target = viterbi[i + spanLen];
+      if (node->isOverridden()) {
+        // The user (or UOM) pinned this node to a specific value. Honor it: do
+        // not branch on homophones here, and use the node's override-adjusted
+        // score (node->score()) so the override actually wins the walk -- the
+        // raw unigram scores would otherwise ignore the override entirely.
+        for (size_t b = 0; b < viterbi[i].size(); ++b) {
+          target.push_back(BeamEntry{viterbi[i][b].score + node->score(), i, b,
+                                     node, node->value()});
+        }
+        continue;
+      }
+
       const auto& unigrams = node->unigrams();
       const size_t uCount = std::min(unigrams.size(), maxUnigramsPerNode);
-      std::vector<BeamEntry>& target = viterbi[i + spanLen];
       // For every partial path reaching i, branch on each top homophone.
       for (size_t b = 0; b < viterbi[i].size(); ++b) {
         const double base = viterbi[i][b].score;
@@ -298,11 +310,13 @@ std::vector<ReadingGrid::NBestPath> ReadingGrid::walkNBest(size_t k) {
       }
       path.values.push_back(entry.value);
       path.readings.push_back(entry.node->reading());
+      path.overridden.push_back(entry.node->isOverridden());
       curr = entry.fromIndex;
       beam = entry.fromBeam;
     }
     std::reverse(path.values.begin(), path.values.end());
     std::reverse(path.readings.begin(), path.readings.end());
+    std::reverse(path.overridden.begin(), path.overridden.end());
     // Total score is the terminal entry's accumulated score.
     path.score = viterbi[readingLen][t].score;
 

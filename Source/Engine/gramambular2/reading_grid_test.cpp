@@ -932,6 +932,30 @@ TEST(ReadingGridTest, WalkNBestTiming) {
   ASSERT_LT(nbestUs, 2000.0);
 }
 
+TEST(ReadingGridTest, WalkNBestPropagatesOverrideFlag) {
+  ReadingGrid grid(std::make_shared<SimpleLM>(kHomophoneData));
+  grid.setReadingSeparator("");
+  grid.insertReading("ㄧ");
+  grid.insertReading("ㄋㄧˇ");
+
+  // Without override, no path position is flagged.
+  auto before = grid.walkNBest(5);
+  ASSERT_FALSE(before.empty());
+  ASSERT_EQ(before[0].overridden.size(), before[0].values.size());
+  ASSERT_FALSE(before[0].hasUserOverride());
+
+  // Override position 0; the top path must now carry the flag at position 0.
+  ASSERT_TRUE(grid.overrideCandidate(
+      0, "依", ReadingGrid::Node::OverrideType::kOverrideValueWithHighScore));
+  auto after = grid.walkNBest(5);
+  ASSERT_FALSE(after.empty());
+  ASSERT_EQ(after[0].valuesAsStrings(),
+            (std::vector<std::string>{"依", "你"}));
+  ASSERT_TRUE(after[0].hasUserOverride());
+  ASSERT_TRUE(after[0].overridden[0]);
+  ASSERT_FALSE(after[0].overridden[1]);
+}
+
 TEST(ReadingGridTest, WalkNBestKZeroAndEmpty) {
   ReadingGrid grid(std::make_shared<SimpleLM>(kHomophoneData));
   grid.setReadingSeparator("");

@@ -191,10 +191,29 @@ class ReadingGrid {
   struct NBestPath {
     std::vector<std::string> values;    // chosen value per node, in order
     std::vector<std::string> readings;  // reading per node (combined for phrases)
+    // Parallel to values: whether the node at that position was overridden
+    // (user manual selection or a UserOverrideModel suggestion). A second-pass
+    // re-ranker must treat these positions as carrying explicit user intent and
+    // not override them by a statistical model score. NOTE: this currently
+    // flags override-type intent only; it does NOT yet flag values that merely
+    // came from a user-defined phrase via the language model's score boost,
+    // because that provenance is not available at this layer (it would require
+    // threading a flag through LanguageModel::Unigram). That remains a known gap.
+    std::vector<bool> overridden;
     double score = 0.0;                 // sum of the chosen unigram scores
 
     [[nodiscard]] const std::vector<std::string>& valuesAsStrings() const {
       return values;
+    }
+
+    // True if any node on this path carries explicit user override intent.
+    [[nodiscard]] bool hasUserOverride() const {
+      for (bool o : overridden) {
+        if (o) {
+          return true;
+        }
+      }
+      return false;
     }
   };
 
