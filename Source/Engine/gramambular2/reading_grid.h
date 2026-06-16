@@ -191,6 +191,10 @@ class ReadingGrid {
   struct NBestPath {
     std::vector<std::string> values;    // chosen value per node, in order
     std::vector<std::string> readings;  // reading per node (combined for phrases)
+    // Parallel to values: spanning length (number of readings) of each node.
+    // Lets a caller rebuild a WalkResult from a path (see walkResultFromPath)
+    // without re-deriving node boundaries.
+    std::vector<size_t> spanningLengths;
     // Parallel to values: whether the node at that position was overridden
     // (user manual selection or a UserOverrideModel suggestion). A second-pass
     // re-ranker must treat these positions as carrying explicit user intent and
@@ -238,6 +242,14 @@ class ReadingGrid {
   // Note: this ignores node overrides and ranks purely by unigram scores, since
   // its purpose is to enumerate raw alternatives for a rescorer.
   std::vector<NBestPath> walkNBest(size_t k);
+
+  // Builds a WalkResult equivalent to `path` (e.g. one chosen by a second-pass
+  // rescorer from walkNBest), WITHOUT mutating the grid. Each node is a fresh,
+  // non-overridden node carrying the path's chosen value as its only unigram, so
+  // node->value() yields the rescored value while the grid's real nodes (and
+  // their override state) are left untouched. This lets a rescorer change what
+  // is displayed without corrupting the user-intent signal the grid tracks.
+  [[nodiscard]] WalkResult walkResultFromPath(const NBestPath& path) const;
 
   struct Candidate {
     Candidate(std::string r, std::string v, std::string rv = "")

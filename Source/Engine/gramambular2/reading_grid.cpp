@@ -313,6 +313,7 @@ std::vector<ReadingGrid::NBestPath> ReadingGrid::walkNBest(size_t k) {
       }
       path.values.push_back(entry.value);
       path.readings.push_back(entry.node->reading());
+      path.spanningLengths.push_back(entry.node->spanningLength());
       path.overridden.push_back(entry.node->isOverridden());
       path.fromUserPhrase.push_back(entry.fromUserPhrase);
       curr = entry.fromIndex;
@@ -320,6 +321,7 @@ std::vector<ReadingGrid::NBestPath> ReadingGrid::walkNBest(size_t k) {
     }
     std::reverse(path.values.begin(), path.values.end());
     std::reverse(path.readings.begin(), path.readings.end());
+    std::reverse(path.spanningLengths.begin(), path.spanningLengths.end());
     std::reverse(path.overridden.begin(), path.overridden.end());
     std::reverse(path.fromUserPhrase.begin(), path.fromUserPhrase.end());
     // Total score is the terminal entry's accumulated score.
@@ -340,6 +342,27 @@ std::vector<ReadingGrid::NBestPath> ReadingGrid::walkNBest(size_t k) {
   }
 
   return results;
+}
+
+ReadingGrid::WalkResult ReadingGrid::walkResultFromPath(
+    const NBestPath& path) const {
+  WalkResult result;
+  size_t total = 0;
+  for (size_t i = 0; i < path.values.size(); ++i) {
+    size_t span = i < path.spanningLengths.size() ? path.spanningLengths[i] : 1;
+    const std::string reading =
+        i < path.readings.size() ? path.readings[i] : std::string();
+    // A single unigram carrying the chosen value, so node->value() returns it
+    // and the node reports isOverridden() == false (it is a plain synthesized
+    // node, not a user/UOM override of a real grid node).
+    std::vector<LanguageModel::Unigram> unigrams;
+    unigrams.emplace_back(path.values[i], 0.0, path.values[i]);
+    result.nodes.push_back(
+        std::make_shared<Node>(reading, span, std::move(unigrams)));
+    total += span;
+  }
+  result.totalReadings = total;
+  return result;
 }
 
 std::vector<ReadingGrid::Candidate> ReadingGrid::candidatesAt(size_t loc) {

@@ -893,6 +893,46 @@ TEST(ReadingGridTest, WalkNBestExposesHomophoneBranch) {
   ASSERT_TRUE(hasFirstChar("依"));
 }
 
+TEST(ReadingGridTest, WalkResultFromPathRebuildsChosenPath) {
+  ReadingGrid grid(std::make_shared<SimpleLM>(kHomophoneData));
+  grid.setReadingSeparator("");
+  grid.insertReading("ㄧ");
+  grid.insertReading("ㄋㄧˇ");
+
+  std::vector<ReadingGrid::NBestPath> nbest = grid.walkNBest(5);
+  // Find the rescorer's hypothetical pick: the 依你 path.
+  const ReadingGrid::NBestPath* yiNi = nullptr;
+  for (const auto& p : nbest) {
+    if (!p.values.empty() && p.values.front() == "依") {
+      yiNi = &p;
+      break;
+    }
+  }
+  ASSERT_NE(yiNi, nullptr);
+
+  ReadingGrid::WalkResult result = grid.walkResultFromPath(*yiNi);
+  // The synthesized walk reproduces the path's values...
+  EXPECT_EQ(result.valuesAsStrings(), (std::vector<std::string>{"依", "你"}));
+  EXPECT_EQ(result.totalReadings, 2u);
+  ASSERT_EQ(result.nodes.size(), 2u);
+  EXPECT_EQ(result.nodes[0]->value(), "依");
+  EXPECT_EQ(result.nodes[0]->spanningLength(), 1u);
+  // ...as plain, non-overridden nodes (the grid's user-intent state is not
+  // forged), and findNodeAt still maps cursors correctly.
+  EXPECT_FALSE(result.nodes[0]->isOverridden());
+  EXPECT_FALSE(result.nodes[1]->isOverridden());
+  size_t past = 0;
+  auto it = result.findNodeAt(0, &past);
+  ASSERT_NE(it, result.nodes.cend());
+  EXPECT_EQ((*it)->value(), "依");
+  EXPECT_EQ(past, 1u);
+
+  // The grid's real nodes are untouched: a fresh walk still yields the unigram
+  // winner 一你, not 依你.
+  EXPECT_EQ(grid.walk().valuesAsStrings(),
+            (std::vector<std::string>{"一", "你"}));
+}
+
 TEST(ReadingGridTest, WalkNBestTiming) {
   // Build a realistic-length sentence grid and time walkNBest vs walk, so we
   // have a baseline for the cost the K-best layer adds before any rescorer.
