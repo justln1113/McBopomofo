@@ -57,31 +57,55 @@ def clean_text(raw: str) -> str:
     return s
 
 
+# Closing brackets/quotes that should stay attached to the sentence they end,
+# rather than starting the next line.
+_CLOSERS = "」』）》〉"
+
+
 def split_sentences(cleaned: str):
     """Yield sentence-ish lines: runs of kept chars, broken at sentence-end
-    punctuation. Drops lines too short or with too little Han content."""
+    punctuation. A closing quote/bracket immediately after the sentence-end
+    punctuation is absorbed into the same line. Fragments without sentence-end
+    punctuation (mostly wiki structural noise: titles, list items, table cells)
+    are held to a stricter bar in _is_good_line."""
     for run in _keep_run.findall(cleaned):
-        # Break the run into sentences at sentence-ending punctuation, keeping
-        # the punctuation attached.
         buf = []
-        for ch in run:
+        i = 0
+        n = len(run)
+        while i < n:
+            ch = run[i]
             buf.append(ch)
             if ch in SENTENCE_END:
+                # Absorb any trailing closers (」』）...) into this sentence.
+                j = i + 1
+                while j < n and run[j] in _CLOSERS:
+                    buf.append(run[j])
+                    j += 1
                 line = "".join(buf).strip()
                 buf = []
-                if _is_good_line(line):
+                i = j
+                if _is_good_line(line, ended=True):
                     yield line
+                continue
+            i += 1
         tail = "".join(buf).strip()
-        if _is_good_line(tail):
+        if _is_good_line(tail, ended=False):
             yield tail
 
 
-def _is_good_line(line: str) -> bool:
+def _is_good_line(line: str, ended: bool) -> bool:
+    # Strip a leading orphan closer that can survive (e.g. run started mid-quote).
+    line = line.lstrip("".join(_CLOSERS))
     if len(line) < 6:
         return False
     han = sum(1 for c in line if re.match(CJK, c))
-    # Require the line to be mostly Han (filters punctuation-only / noise lines).
-    return han >= 5 and han / len(line) >= 0.6
+    if han < 5 or han / len(line) < 0.6:
+        return False
+    # Fragments lacking sentence-end punctuation are usually structural noise;
+    # keep only the longer, denser ones that look like real prose.
+    if not ended:
+        return len(line) >= 16 and han / len(line) >= 0.85
+    return True
 
 
 def iter_corpus(max_chars: int, limit_docs: int | None):
