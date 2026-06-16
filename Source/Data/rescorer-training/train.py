@@ -20,11 +20,11 @@ import argparse
 import json
 import math
 import sys
-import time
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 
 class CharLSTM(nn.Module):
@@ -132,12 +132,16 @@ def main():
     n_params = sum(p.numel() for p in model.parameters())
     print(f"[train] {n_params/1e6:.2f}M params", file=sys.stderr)
 
+    steps_per_epoch = len(dl)
     for epoch in range(args.epochs):
         model.train()
         running = 0.0
         seen = 0
-        t0 = time.time()
-        for step, (bx, by) in enumerate(dl):
+        ema = None  # exponential moving average of loss, for a stable readout
+        pbar = tqdm(dl, total=steps_per_epoch,
+                    desc=f"epoch {epoch + 1}/{args.epochs}", unit="step",
+                    dynamic_ncols=True)
+        for step, (bx, by) in enumerate(pbar):
             bx, by = bx.to(device), by.to(device)
             logits, _ = model(bx)
             loss = loss_fn(logits.reshape(-1, vocab_size), by.reshape(-1))
@@ -146,22 +150,29 @@ def main():
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
 
-            running += loss.item()
+            lv = loss.item()
+            running += lv
             seen += 1
+            # Raw per-step loss is noisy; smooth it for the live bar readout.
+            ema = lv if ema is None else 0.98 * ema + 0.02 * lv
+            rate = pbar.format_dict.get("rate")
+            pbar.set_postfix(
+                loss=f"{ema:.3f}", ppl=f"{math.exp(ema):.1f}",
+                seq_s=f"{rate * args.batch_size:.0f}" if rate else "…")
             if (step + 1) % args.log_every == 0:
                 avg = running / seen
-                rate = seen * args.batch_size / (time.time() - t0)
-                print(f"[train] epoch {epoch} step {step+1} "
-                      f"loss {avg:.4f} ppl {math.exp(avg):.1f} "
-                      f"({rate:.0f} seq/s)", file=sys.stderr)
+                # Persistent scrollback line (tqdm.write does not break the bar)
+                # so the loss history survives after the bar redraws.
+                tqdm.write(f"[train] epoch {epoch} step {step + 1} "
+                           f"loss {avg:.4f} ppl {math.exp(avg):.1f}")
                 running = 0.0
                 seen = 0
-                t0 = time.time()
                 # MPS never shrinks its allocation pool on its own; release the
                 # cached blocks periodically so a long run does not creep up to
                 # an OOM. Cheap and a no-op on other backends.
                 if device.type == "mps":
                     torch.mps.empty_cache()
+        pbar.close()
 
         # Save after each epoch (checkpoint), with everything export needs.
         torch.save({
@@ -170,8 +181,7 @@ def main():
             "embed_dim": args.embed_dim,
             "hidden_dim": args.hidden_dim,
         }, args.out)
-        print(f"[train] saved checkpoint after epoch {epoch} -> {args.out}",
-              file=sys.stderr)
+        tqdm.write(f"[train] saved checkpoint after epoch {epoch} -> {args.out}")
 
     print("[train] DONE", file=sys.stderr)
 
