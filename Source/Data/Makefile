@@ -6,6 +6,19 @@ all: data.txt data-plain-bpmf.txt associated-phrases-v2.txt
 
 install: all
 
+# The neural rescorer model is a TRAINED artifact (see rescorer-training/), not
+# something cookable from committed sources like data.txt -- so it is NOT part of
+# `all`. Once you have a trained rescorer-training/model.pt, run `make rescorer`
+# to export the int8 weights + vocab the app bundles (both gitignored, like
+# data.txt). Requires uv.
+.PHONY: rescorer
+rescorer: rescorer-weights.bin rescorer-vocab.txt
+
+rescorer-weights.bin rescorer-vocab.txt: rescorer-training/model.pt rescorer-training/vocab.json
+	cd rescorer-training && uv run python export_weights.py --int8 \
+		--model model.pt --out ../rescorer-weights.bin
+	cp rescorer-training/vocab.txt rescorer-vocab.txt
+
 data-plain-bpmf.txt: curation/compilers/plain_bpmf_compiler.py BPMFBase.txt BPMFPunctuations.txt
 	$(PYTHON) -m curation.compilers.plain_bpmf_compiler \
 		--bpmf_base BPMFBase.txt \
