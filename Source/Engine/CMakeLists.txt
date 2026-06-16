@@ -16,6 +16,8 @@ add_library(McBopomofoLMLib
         McBopomofoLM.h
         MemoryMappedFile.h
         MemoryMappedFile.cpp
+        NeuralRescorer.h
+        NeuralRescorer.cpp
         ParselessPhraseDB.cpp
         ParselessPhraseDB.h
         ParselessLM.cpp
@@ -88,6 +90,7 @@ if (ENABLE_TEST)
                 ByteBlockBackedDictionaryTest.cpp
                 McBopomofoLMTest.cpp
                 MemoryMappedFileTest.cpp
+                NeuralRescorerTest.cpp
                 ParselessLMTest.cpp
                 ParselessPhraseDBTest.cpp
                 PhraseReplacementMapTest.cpp
