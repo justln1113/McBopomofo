@@ -14,6 +14,8 @@ add_library(McBopomofoLMLib
         ByteBlockBackedDictionary.cpp
         McBopomofoLM.cpp
         McBopomofoLM.h
+        LstmRescorerModel.h
+        LstmRescorerModel.cpp
         MemoryMappedFile.h
         MemoryMappedFile.cpp
         NeuralRescorer.h
@@ -89,6 +91,7 @@ if (ENABLE_TEST)
                 AssociatedPhrasesV2Test.cpp
                 ByteBlockBackedDictionaryTest.cpp
                 McBopomofoLMTest.cpp
+                LstmRescorerModelTest.cpp
                 MemoryMappedFileTest.cpp
                 NeuralRescorerTest.cpp
                 ParselessLMTest.cpp
