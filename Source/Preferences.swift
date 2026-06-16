@@ -37,6 +37,7 @@ private let kMoveCursorAfterSelectingCandidateKey = "MoveCursorAfterSelectingCan
 private let kUseHorizontalCandidateListPreferenceKey = "UseHorizontalCandidateList"
 private let kChooseCandidateUsingSpaceKey = "ChooseCandidateUsingSpaceKey"
 private let kChineseConversionEnabledKey = "ChineseConversionEnabled"
+private let kNeuralRescorerEnabledKey = "NeuralRescorerEnabled"
 private let kHalfWidthPunctuationEnabledKey = "HalfWidthPunctuationEnable"
 private let kEscToCleanInputBufferKey = "EscToCleanInputBuffer"
 private let kKeepReadingUponCompositionError = "KeepReadingUponCompositionError"
@@ -302,6 +303,11 @@ class Preferences: NSObject {
 
     @UserDefault(key: kChineseConversionEnabledKey, defaultValue: false)
     @objc static var chineseConversionEnabled: Bool
+
+    // Opt-in second-pass neural rescorer (long-range homophone disambiguation).
+    // Default off: no-ops gracefully if the model file isn't bundled.
+    @UserDefault(key: kNeuralRescorerEnabledKey, defaultValue: false)
+    @objc static var neuralRescorerEnabled: Bool
 
     @objc static func toggleChineseConversionEnabled() -> Bool {
         chineseConversionEnabled = !chineseConversionEnabled

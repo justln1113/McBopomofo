@@ -25,7 +25,9 @@
 #import "LanguageModelManager+Privates.h"
 #import "Mandarin.h"
 #import "McBopomofo-Swift.h"
+#import "LstmRescorerModel.h"
 #import "McBopomofoLM.h"
+#import "NeuralRescorer.h"
 #import "UTF8Helper.h"
 #import "UserOverrideModel.h"
 #import "reading_grid.h"
@@ -67,6 +69,14 @@ static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
 
     Formosa::Gramambular2::ReadingGrid *_grid;
     Formosa::Gramambular2::ReadingGrid::WalkResult _latestWalk;
+
+    // Optional second-pass neural rescorer for long-range homophone
+    // disambiguation. Loaded lazily from the app bundle the first time _walk
+    // runs with the feature enabled; stays null if the model files are absent
+    // or fail to load, in which case rescoring is silently skipped.
+    std::shared_ptr<McBopomofo::LstmRescorerModel> _rescorerModel;
+    std::unique_ptr<McBopomofo::NeuralRescorer> _neuralRescorer;
+    BOOL _rescorerLoadAttempted;
 
     NSString *_inputMode;
 }
@@ -299,6 +309,11 @@ static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
     _bpmfReadingBuffer->clear();
     _grid->clear();
     _latestWalk = Formosa::Gramambular2::ReadingGrid::WalkResult {};
+    // The rescorer's prefix cache is keyed by value prefixes of the previous
+    // composition; drop it so it cannot grow without bound across sessions.
+    if (_neuralRescorer != nullptr) {
+        _neuralRescorer->clearCache();
+    }
 }
 
 - (void)handleForceCommitWithStateCallback:(void (^)(InputState *))stateCallback
@@ -2538,9 +2553,61 @@ static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
     return newState;
 }
 
+// Number of n-best candidate sentences fed to the rescorer. Small: the
+// alternatives that matter (homophone branches) surface in the first few.
+static const size_t kRescorerNBest = 5;
+
+- (void)_ensureRescorerLoaded
+{
+    if (_rescorerLoadAttempted) {
+        return;
+    }
+    _rescorerLoadAttempted = YES;
+    NSBundle *bundle = [NSBundle bundleForClass:[self class]];
+    NSString *weightsPath = [bundle pathForResource:@"rescorer-weights" ofType:@"bin"];
+    NSString *vocabPath = [bundle pathForResource:@"rescorer-vocab" ofType:@"txt"];
+    if (weightsPath == nil || vocabPath == nil) {
+        // Model not bundled; the feature stays inert.
+        return;
+    }
+    try {
+        _rescorerModel = McBopomofo::LstmRescorerModel::Load(
+            weightsPath.UTF8String, vocabPath.UTF8String);
+        _neuralRescorer =
+            std::make_unique<McBopomofo::NeuralRescorer>(_rescorerModel);
+    } catch (const std::exception &e) {
+        NSLog(@"NeuralRescorer: failed to load model: %s", e.what());
+        _rescorerModel = nullptr;
+        _neuralRescorer = nullptr;
+    }
+}
+
 - (void)_walk
 {
     _latestWalk = _grid->walk();
+
+    // Second pass: let the neural rescorer re-rank whole-sentence alternatives
+    // and, if it prefers a different reading, REPLACE the displayed walk with a
+    // synthesized one. The grid itself is never mutated, so this never forges
+    // user intent: walkNBest reflects only genuine user/UOM overrides, and
+    // rerankBestIndex returns 0 (no change) whenever the top path already
+    // carries such intent -- letting manual selections and UOM win.
+    if (!Preferences.neuralRescorerEnabled) {
+        return;
+    }
+    [self _ensureRescorerLoaded];
+    if (_neuralRescorer == nullptr) {
+        return;
+    }
+    std::vector<Formosa::Gramambular2::ReadingGrid::NBestPath> paths =
+        _grid->walkNBest(kRescorerNBest);
+    if (paths.size() < 2) {
+        return;
+    }
+    size_t best = _neuralRescorer->rerankBestIndex(paths);
+    if (best != 0 && best < paths.size()) {
+        _latestWalk = _grid->walkResultFromPath(paths[best]);
+    }
 }
 
 - (InputStateChoosingCandidate *)_buildCandidateStateFromInputtingState:(InputStateInputting *)inputting useVerticalMode:(BOOL)useVerticalMode

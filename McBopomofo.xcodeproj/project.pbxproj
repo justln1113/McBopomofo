@@ -48,6 +48,8 @@
 		D40EFFA22EB669F900C1728A /* InfoCollector in Frameworks */ = {isa = PBXBuildFile; productRef = D40EFFA12EB669F900C1728A /* InfoCollector */; };
 		D41355D8278D74B5005E5CBD /* LanguageModelManager.mm in Sources */ = {isa = PBXBuildFile; fileRef = D41355D7278D7409005E5CBD /* LanguageModelManager.mm */; };
 		D41355DB278E6D17005E5CBD /* McBopomofoLM.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D41355D9278E6D17005E5CBD /* McBopomofoLM.cpp */; };
+		FA11BAC500000000000B0001 /* NeuralRescorer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0001 /* NeuralRescorer.cpp */; };
+		FA11BAC500000000000B0003 /* LstmRescorerModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0003 /* LstmRescorerModel.cpp */; };
 		D41355DE278EA3ED005E5CBD /* UserPhrasesLM.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D41355DC278EA3ED005E5CBD /* UserPhrasesLM.cpp */; };
 		D41B626C2B86EAE900583148 /* BopomofoBraille in Frameworks */ = {isa = PBXBuildFile; productRef = D41B626B2B86EAE900583148 /* BopomofoBraille */; };
 		D41B626F2B87B5C100583148 /* ServiceProviderInputHelper.mm in Sources */ = {isa = PBXBuildFile; fileRef = D41B626E2B87B5C100583148 /* ServiceProviderInputHelper.mm */; };
@@ -196,6 +198,10 @@
 		D41355D7278D7409005E5CBD /* LanguageModelManager.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LanguageModelManager.mm; sourceTree = "<group>"; };
 		D41355D9278E6D17005E5CBD /* McBopomofoLM.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = McBopomofoLM.cpp; sourceTree = "<group>"; };
 		D41355DA278E6D17005E5CBD /* McBopomofoLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = McBopomofoLM.h; sourceTree = "<group>"; };
+		FA11BAC500000000000C0001 /* NeuralRescorer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = NeuralRescorer.cpp; sourceTree = "<group>"; };
+		FA11BAC500000000000C0002 /* NeuralRescorer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NeuralRescorer.h; sourceTree = "<group>"; };
+		FA11BAC500000000000C0003 /* LstmRescorerModel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = LstmRescorerModel.cpp; sourceTree = "<group>"; };
+		FA11BAC500000000000C0004 /* LstmRescorerModel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LstmRescorerModel.h; sourceTree = "<group>"; };
 		D41355DC278EA3ED005E5CBD /* UserPhrasesLM.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = UserPhrasesLM.cpp; sourceTree = "<group>"; };
 		D41355DD278EA3ED005E5CBD /* UserPhrasesLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = UserPhrasesLM.h; sourceTree = "<group>"; };
 		D41B626A2B86EAD400583148 /* BopomofoBraille */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = BopomofoBraille; path = Packages/BopomofoBraille; sourceTree = "<group>"; };
@@ -377,6 +383,10 @@
 				6A660A6E2EAF371000D53D7B /* ByteBlockBackedDictionary.h */,
 				D41355D9278E6D17005E5CBD /* McBopomofoLM.cpp */,
 				D41355DA278E6D17005E5CBD /* McBopomofoLM.h */,
+				FA11BAC500000000000C0001 /* NeuralRescorer.cpp */,
+				FA11BAC500000000000C0002 /* NeuralRescorer.h */,
+				FA11BAC500000000000C0003 /* LstmRescorerModel.cpp */,
+				FA11BAC500000000000C0004 /* LstmRescorerModel.h */,
 				6ADF5B152BA513E000577D98 /* MemoryMappedFile.cpp */,
 				6ADF5B142BA513E000577D98 /* MemoryMappedFile.h */,
 				6ACC3D422793701600F1B140 /* ParselessLM.cpp */,
@@ -767,6 +777,8 @@
 				D456576E279E4F7B00DF6BC9 /* KeyHandlerInput.swift in Sources */,
 				D47F7DCE278BFB57002F9DD7 /* PreferencesWindowController.swift in Sources */,
 				D41355DB278E6D17005E5CBD /* McBopomofoLM.cpp in Sources */,
+				FA11BAC500000000000B0001 /* NeuralRescorer.cpp in Sources */,
+				FA11BAC500000000000B0003 /* LstmRescorerModel.cpp in Sources */,
 				D47F7DD3278C1263002F9DD7 /* UserOverrideModel.cpp in Sources */,
 				6A0D4F4515FC0EB100ABF4B3 /* Mandarin.cpp in Sources */,
 				6ACC3D452793701600F1B140 /* ParselessLM.cpp in Sources */,
