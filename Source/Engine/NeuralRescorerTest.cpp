@@ -137,6 +137,53 @@ ReadingGrid BuildYiNiGrid() {
   return grid;
 }
 
+// Builds a HomophoneProvider backed by a real grid. For an all-single-syllable
+// sentence the candidate value index equals the grid reading position, so we
+// can map position -> candidatesAt(position) directly. (Multi-char nodes would
+// need spanning-length accumulation; not needed for these single-char cases.)
+NeuralRescorer::HomophoneProvider GridHomophoneProvider(ReadingGrid* grid) {
+  return [grid](size_t position) {
+    std::vector<std::string> values;
+    for (const auto& c : grid->candidatesAt(position)) {
+      values.push_back(c.value);
+    }
+    return values;
+  };
+}
+
+// A model that records the homophone set it receives at each step, so a test
+// can assert the selective-softmax denominator is actually wired through from
+// the grid. Scores like the rule model so reranking still flips to 依你.
+class HomophoneRecordingModel : public RescorerModel {
+ public:
+  RescorerModelState initialState() override { return {}; }
+
+  std::pair<double, RescorerModelState> step(
+      const RescorerModelState& prev, const std::string& value,
+      const std::vector<std::string>& homophones) override {
+    receivedHomophones.push_back(homophones);
+
+    const std::string& prevValue = prev.context;
+    double logProb = -5.0;
+    if (value == "依") {
+      logProb = -0.1;
+    } else if (value == "一") {
+      logProb = -4.0;
+    } else if (value == "你" && prevValue == "依") {
+      logProb = -0.05;
+    } else if (value == "你") {
+      logProb = -2.0;
+    }
+
+    RescorerModelState next;
+    next.context = value;
+    return {logProb, next};
+  }
+
+  // One entry per executed step (cache hits don't call step()).
+  std::vector<std::vector<std::string>> receivedHomophones;
+};
+
 }  // namespace
 
 TEST(NeuralRescorerTest, ConstantModelPreservesUnigramOrder) {
@@ -199,6 +246,39 @@ TEST(NeuralRescorerTest, PrefixCacheSharesWork) {
   std::cout << "[ cache ] computed=" << rescorer.lastStepsComputed()
             << " cached=" << rescorer.lastStepsCached() << "\n";
   ASSERT_GT(rescorer.lastStepsCached(), 0u);
+}
+
+TEST(NeuralRescorerTest, EndToEndWithGridHomophoneProvider) {
+  // Full connectivity: real grid -> walkNBest -> rerank, with the selective-
+  // softmax homophone set supplied live from the grid (not a stub). Verifies
+  // the whole pipeline links and that the homophone set reaches the model.
+  ReadingGrid grid = BuildYiNiGrid();
+  auto candidates = grid.walkNBest(5);
+  ASSERT_GE(candidates.size(), 2u);
+
+  auto model = std::make_shared<HomophoneRecordingModel>();
+  NeuralRescorer rescorer(model, /*lambda=*/5.0);
+  auto provider = GridHomophoneProvider(&grid);
+
+  const auto& best = rescorer.rerank(candidates, provider);
+
+  // The end-to-end choice must flip to 依你.
+  ASSERT_EQ(best.valuesAsStrings(),
+            (std::vector<std::string>{"依", "你"}));
+
+  // The homophone set for position 0 must be the ㄧ family the grid knows.
+  ASSERT_FALSE(model->receivedHomophones.empty());
+  bool sawYiFamily = false;
+  for (const auto& set : model->receivedHomophones) {
+    bool hasYi = std::find(set.begin(), set.end(), "一") != set.end();
+    bool hasI = std::find(set.begin(), set.end(), "依") != set.end();
+    if (hasYi && hasI) {
+      sawYiFamily = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(sawYiFamily)
+      << "selective-softmax homophone set was not wired through from the grid";
 }
 
 TEST(NeuralRescorerTest, Timing) {
