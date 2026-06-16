@@ -239,15 +239,13 @@ static void LTLoadVariantAnnotatorData()
 
 + (BOOL)checkIfUserPhraseExist:(NSString *)userPhrase key:(NSString *)key NS_SWIFT_NAME(checkIfExist(userPhrase:key:))
 {
-    std::string unigramKey(key.UTF8String);
-    auto unigrams = gLanguageModelMcBopomofo.getUnigrams(unigramKey);
-    std::string userPhraseString(userPhrase.UTF8String);
-    for (const auto& unigram : unigrams) {
-        if (unigram.value() == userPhraseString) {
-            return YES;
-        }
-    }
-    return NO;
+    // Only treat the phrase as "already existing" if it is already in the
+    // user's own phrase file. A phrase that exists solely in the built-in
+    // dictionary is still allowed to be added, so users can boost its score
+    // by promoting it into the user phrase list. This mirrors the duplicate
+    // check that -writeUserPhrase: performs against the same file.
+    NSString *combined = [NSString stringWithFormat:@"%@ %@", userPhrase, key];
+    return [self _checkIfPhrase:combined existAtPath:[self userPhrasesDataPathMcBopomofo]];
 }
 
 + (BOOL)_checkIfPhrase:(NSString *)phrase existAtPath:(NSString *)path
