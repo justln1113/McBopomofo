@@ -49,20 +49,22 @@ namespace {
 // W_ih:     gate order i,f,g,o -> [0, 0, 1, 0]   (only the cell gate g is active)
 // W_hh:     all 0
 // biases:   all 0
-// proj.W:   all 0   (so logits depend only on bias -> independent of hidden)
+// proj.W:   甲=2, 乙=-3, rest 0   (nonzero so the score exercises proj . h)
 // proj.b:   甲=+1, 乙=-1, rest 0
 //
 // Hand-computed (see the matching python trace):
 //   initial state after <bos>:  h = 0.1816997422,  c = 0.3807970780
 //   after stepping 甲:           h = 0.2581184019,  c = 0.5711956170
-//   selective softmax over {甲,乙} from initial: logP(甲) = -0.1269280110,
-//                                                logP(乙) = -2.1269280110
+//   full-vocab log-softmax from the initial state (logits depend on h):
+//     logP(甲) = -0.7312694787,  logP(乙) = -3.6397681897,
+//     logP(<unk>) = -2.0946689631
 constexpr double kInitH = 0.1816997422;
 constexpr double kInitC = 0.3807970780;
 constexpr double kAfterJiaH = 0.2581184019;
 constexpr double kAfterJiaC = 0.5711956170;
-constexpr double kLogPJia = -0.1269280110;
-constexpr double kLogPYi = -2.1269280110;
+constexpr double kLogPJia = -0.7312694787;
+constexpr double kLogPYi = -3.6397681897;
+constexpr double kLogPUnk = -2.0946689631;
 
 void PutU32(std::ofstream& f, uint32_t v) {
   f.write(reinterpret_cast<const char*>(&v), sizeof(v));  // little-endian host
@@ -100,7 +102,7 @@ class LstmRescorerModelTest : public ::testing::Test {
       PutFloats(wf, {0, 0, 0, 0});        // lstm W_hh [4,1]
       PutFloats(wf, {0, 0, 0, 0});        // lstm b_ih [4]
       PutFloats(wf, {0, 0, 0, 0});        // lstm b_hh [4]
-      PutFloats(wf, {0, 0, 0, 0, 0, 0});  // proj.weight [6,1]
+      PutFloats(wf, {0, 0, 0, 0, 2, -3}); // proj.weight [6,1] (exercises proj.h)
       PutFloats(wf, {0, 0, 0, 0, 1, -1}); // proj.bias [6]
     }
     {
@@ -157,26 +159,27 @@ TEST_F(LstmRescorerModelTest, StepScoresAndAdvancesState) {
   EXPECT_NEAR(next.hidden[1], kAfterJiaC, 1e-5);
 }
 
-TEST_F(LstmRescorerModelTest, SelectiveSoftmaxNormalizesOverHomophones) {
+TEST_F(LstmRescorerModelTest, FullSoftmaxScoresMatchHandComputed) {
   auto model = Load();
-  auto [lpJia, s1] = model->step(model->initialState(), kJia, {kJia, kYi});
-  auto [lpYi, s2] = model->step(model->initialState(), kYi, {kJia, kYi});
+  auto [lpJia, s1] = model->step(model->initialState(), kJia, {});
+  auto [lpYi, s2] = model->step(model->initialState(), kYi, {});
+  // Each is logit - log-sum-exp over the WHOLE vocab (the full-likelihood term).
   EXPECT_NEAR(lpJia, kLogPJia, 1e-5);
   EXPECT_NEAR(lpYi, kLogPYi, 1e-5);
-  // A softmax over the homophone set: the probabilities must sum to 1.
-  EXPECT_NEAR(std::exp(lpJia) + std::exp(lpYi), 1.0, 1e-6);
-  // And the model prefers 甲 (proj.bias favors it).
-  EXPECT_GT(lpJia, lpYi);
+  EXPECT_GT(lpJia, lpYi);  // model prefers 甲
 }
 
-TEST_F(LstmRescorerModelTest, SingleCandidatePositionContributesZero) {
+TEST_F(LstmRescorerModelTest, HomophonesParamIsIgnored) {
   auto model = Load();
-  // No homophones, or just the value itself: nothing to discriminate -> 0.
-  auto [lpEmpty, s1] = model->step(model->initialState(), kJia, {});
-  auto [lpSelf, s2] = model->step(model->initialState(), kJia, {kJia});
-  EXPECT_DOUBLE_EQ(lpEmpty, 0.0);
-  EXPECT_DOUBLE_EQ(lpSelf, 0.0);
-  // The advanced state must still be correct regardless of scoring.
+  // A full-likelihood model scores against the whole vocab, so the homophone
+  // hint must not change the per-position score (unlike the old selective
+  // design, where a single-candidate position scored 0 and lost the signal that
+  // actually lives in the char *after* the branch).
+  auto [lpNone, s1] = model->step(model->initialState(), kJia, {});
+  auto [lpHom, s2] = model->step(model->initialState(), kJia, {kJia, kYi});
+  EXPECT_DOUBLE_EQ(lpNone, lpHom);
+  EXPECT_NEAR(lpNone, kLogPJia, 1e-5);
+  // The advanced state must be correct regardless of the hint.
   EXPECT_NEAR(s1.hidden[0], kAfterJiaH, 1e-5);
 }
 
@@ -196,10 +199,11 @@ TEST_F(LstmRescorerModelTest, StateIsSelfContained) {
 
 TEST_F(LstmRescorerModelTest, UnknownCharMapsToUnk) {
   auto model = Load();
-  // A char not in the vocab should not crash; it maps to <unk> and advances.
+  // A char not in the vocab should not crash; it maps to <unk> and is scored
+  // as such (the full-likelihood term for <unk>).
   auto [logProb, next] = model->step(model->initialState(), "\xe9\xbe\x9c",
                                      {});  // 龜, not in vocab
-  EXPECT_DOUBLE_EQ(logProb, 0.0);
+  EXPECT_NEAR(logProb, kLogPUnk, 1e-5);
   EXPECT_EQ(next.hidden.size(), 2u);
 }
 
@@ -233,8 +237,8 @@ TEST_F(LstmRescorerModelTest, RerankFlipsToModelPreferredCandidate) {
     return {kJia, kYi};
   };
 
-  // combined(乙) = 0.0  + (-2.1269) = -2.1269
-  // combined(甲) = -0.5 + (-0.1269) = -0.6269  -> wins
+  // combined(乙) = 0.0  + (-3.6398) = -3.6398
+  // combined(甲) = -0.5 + (-0.7313) = -1.2313  -> wins
   size_t best = rescorer.rerankBestIndex(candidates, homophones);
   EXPECT_EQ(best, 1u);
 

@@ -26,8 +26,8 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
-#include <unordered_set>
 
 #include "UTF8Helper.h"
 
@@ -104,23 +104,6 @@ class ByteReader {
   size_t size_;
   size_t pos_ = 0;
 };
-
-double LogSumExp(const std::vector<double>& xs) {
-  double m = -std::numeric_limits<double>::infinity();
-  for (double x : xs) {
-    if (x > m) {
-      m = x;
-    }
-  }
-  if (std::isinf(m)) {
-    return m;
-  }
-  double sum = 0.0;
-  for (double x : xs) {
-    sum += std::exp(x - m);
-  }
-  return m + std::log(sum);
-}
 
 }  // namespace
 
@@ -293,86 +276,75 @@ void LstmRescorerModel::lstmStep(int tokenId, const float* hPrev,
   }
 }
 
-double LstmRescorerModel::scoreValue(const std::vector<int>& ids,
-                                     const float* hIn, const float* cIn,
-                                     std::vector<float>* hOut,
-                                     std::vector<float>* cOut) const {
+double LstmRescorerModel::logSoftmaxFull(int tokenId, const float* h) const {
   const size_t H = hidden_;
-  std::vector<float> h(hIn, hIn + H);
-  std::vector<float> c(cIn, cIn + H);
-  std::vector<float> hNext(H);
-  std::vector<float> cNext(H);
-
-  double score = 0.0;
-  for (int id : ids) {
-    // proj(h) predicts this char: logit = projWeight[id] . h + projBias[id].
-    const float* w = projWeight_.data() + static_cast<size_t>(id) * H;
-    double logit = projBias_[id];
+  const size_t V = vocab_;
+  // Full-vocabulary log-softmax: logit(tokenId) - log sum_t exp(logit(t)).
+  // We score against the WHOLE vocabulary, not a selective set of the position's
+  // homophones, because the disambiguating signal usually lies in the char
+  // *after* a branch (你 reads fluently after 依 but not after 一); a selective
+  // softmax at the branch alone would miss it and pick the wrong candidate.
+  std::vector<double> logits(V);
+  double maxLogit = -std::numeric_limits<double>::infinity();
+  for (size_t t = 0; t < V; ++t) {
+    const float* w = projWeight_.data() + t * H;
+    double l = projBias_[t];
     for (size_t k = 0; k < H; ++k) {
-      logit += w[k] * h[k];
+      l += w[k] * h[k];
     }
-    score += logit;
-    // Advance past this char to predict the next one.
-    lstmStep(id, h.data(), c.data(), hNext.data(), cNext.data());
-    h.swap(hNext);
-    c.swap(cNext);
+    logits[t] = l;
+    if (l > maxLogit) {
+      maxLogit = l;
+    }
   }
-
-  if (hOut != nullptr) {
-    *hOut = h;
+  double sumExp = 0.0;
+  for (size_t t = 0; t < V; ++t) {
+    sumExp += std::exp(logits[t] - maxLogit);
   }
-  if (cOut != nullptr) {
-    *cOut = c;
-  }
-  return score;
+  double logZ = maxLogit + std::log(sumExp);
+  return logits[static_cast<size_t>(tokenId)] - logZ;
 }
 
 std::pair<double, RescorerModelState> LstmRescorerModel::step(
     const RescorerModelState& prevState, const std::string& nextValue,
     const std::vector<std::string>& homophones) {
+  // homophones is unused: a full-likelihood model scores every position against
+  // the whole vocabulary, so the per-position term is the same regardless of the
+  // branch set. The parameter stays for the RescorerModel interface (mock /
+  // bigram-style models may still use a selective set).
+  (void)homophones;
+
   const size_t H = hidden_;
   // Resolve the prior (h, c). A malformed/empty state falls back to the initial
   // state rather than reading out of bounds.
   const std::vector<float>& prevHidden =
       prevState.hidden.size() == 2 * H ? prevState.hidden
                                        : initialState_.hidden;
-  const float* hPrev = prevHidden.data();
-  const float* cPrev = prevHidden.data() + H;
 
   std::vector<int> ids = tokenize(nextValue);
   if (ids.empty()) {
     return {0.0, prevState};
   }
 
-  // Advance the actual state through the chosen value, capturing its score.
-  std::vector<float> hNew;
-  std::vector<float> cNew;
-  double chosenScore = scoreValue(ids, hPrev, cPrev, &hNew, &cNew);
+  std::vector<float> h(prevHidden.begin(), prevHidden.begin() + H);
+  std::vector<float> c(prevHidden.begin() + H, prevHidden.begin() + 2 * H);
+  std::vector<float> hNext(H);
+  std::vector<float> cNext(H);
 
-  // Build the selective-softmax denominator: the distinct candidate values at
-  // this position. Only when there are >= 2 of them does this position
-  // discriminate between sentences and contribute to the score.
-  std::vector<double> denomScores;
-  std::unordered_set<std::string> seen;
-  seen.insert(nextValue);
-  denomScores.push_back(chosenScore);
-  for (const std::string& hv : homophones) {
-    if (!seen.insert(hv).second) {
-      continue;  // duplicate, including nextValue itself
-    }
-    denomScores.push_back(scoreValue(tokenize(hv), hPrev, cPrev, nullptr,
-                                     nullptr));
-  }
-
+  // Sum the full-softmax log-probability of each char given its prefix: the
+  // candidate value's contribution to the sentence log-likelihood.
   double logProb = 0.0;
-  if (denomScores.size() > 1) {
-    logProb = chosenScore - LogSumExp(denomScores);
+  for (int id : ids) {
+    logProb += logSoftmaxFull(id, h.data());
+    lstmStep(id, h.data(), c.data(), hNext.data(), cNext.data());
+    h.swap(hNext);
+    c.swap(cNext);
   }
 
   RescorerModelState next;
   next.hidden.resize(2 * H);
-  std::memcpy(next.hidden.data(), hNew.data(), H * sizeof(float));
-  std::memcpy(next.hidden.data() + H, cNew.data(), H * sizeof(float));
+  std::memcpy(next.hidden.data(), h.data(), H * sizeof(float));
+  std::memcpy(next.hidden.data() + H, c.data(), H * sizeof(float));
   return {logProb, std::move(next)};
 }
 

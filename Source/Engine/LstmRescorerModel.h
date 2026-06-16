@@ -67,12 +67,12 @@ class LstmRescorerModel : public RescorerModel {
 
   RescorerModelState initialState() override;
 
-  // log P(nextValue | prefix) under a selective softmax over `homophones` (the
-  // values sharing nextValue's reading at this position), plus the advanced
-  // state. A position with <=1 distinct candidate cannot discriminate between
-  // sentences, so it contributes 0 to the score and only advances the state --
-  // this is both correct (the term is identical across candidates) and the
-  // reason most positions cost just one LSTM step with no softmax.
+  // log P(nextValue | prefix) under a full-vocabulary softmax at each character,
+  // plus the advanced state -- i.e. nextValue's contribution to the candidate
+  // sentence's log-likelihood. `homophones` is ignored (see logSoftmaxFull):
+  // the disambiguating signal for a homophone usually sits in the char *after*
+  // the branch, which a selective softmax over only the branch set cannot see,
+  // so we score every position against the whole vocabulary.
   std::pair<double, RescorerModelState> step(
       const RescorerModelState& prevState, const std::string& nextValue,
       const std::vector<std::string>& homophones) override;
@@ -93,16 +93,10 @@ class LstmRescorerModel : public RescorerModel {
   void lstmStep(int tokenId, const float* hPrev, const float* cPrev,
                 float* hOut, float* cOut) const;
 
-  // Unnormalized score (sum of per-char proj logits, autoregressive) of `ids`
-  // starting from (hIn, cIn). Also returns the resulting state in (hOut, cOut)
-  // when they are non-null. This is the value's contribution to the selective
-  // softmax numerator/denominator; for single-character values it is exactly
-  // the proj logit of that character, so the softmax over the homophone set is
-  // exact. (For multi-character homophone values of differing length it is an
-  // approximation; such sets are rare in practice.)
-  double scoreValue(const std::vector<int>& ids, const float* hIn,
-                    const float* cIn, std::vector<float>* hOut,
-                    std::vector<float>* cOut) const;
+  // Full-vocabulary log-softmax of `tokenId` given hidden state `h` (length
+  // hidden_): logit(tokenId) - log sum over the whole vocab of exp(logit). This
+  // is the per-char term of the candidate sentence's log-likelihood.
+  double logSoftmaxFull(int tokenId, const float* h) const;
 
   uint32_t vocab_ = 0;
   uint32_t embed_ = 0;
