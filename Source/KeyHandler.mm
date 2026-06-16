@@ -2638,7 +2638,20 @@ static const size_t kRescorerNBest = 5;
 
 - (InputStateChoosingCandidate *)_buildCandidateStateFromInputtingState:(InputStateInputting *)inputting useVerticalMode:(BOOL)useVerticalMode
 {
-    auto candidates = _grid->candidatesAt(self.actualCandidateCursorIndex);
+    size_t actualCursor = self.actualCandidateCursorIndex;
+    auto candidates = _grid->candidatesAt(actualCursor);
+
+    // The value currently displayed at the cursor (which may be the neural
+    // rescorer's choice, not the top unigram). We highlight the matching
+    // candidate so the candidate window's default selection reflects what the
+    // user actually sees.
+    std::string displayedReading;
+    std::string displayedValue;
+    auto displayedNodeIt = _latestWalk.findNodeAt(actualCursor);
+    if (displayedNodeIt != _latestWalk.nodes.cend()) {
+        displayedReading = (*displayedNodeIt)->reading();
+        displayedValue = (*displayedNodeIt)->value();
+    }
 
     std::unordered_map<std::string, size_t> valueCountMap;
     for (const auto& c : candidates) {
@@ -2646,7 +2659,12 @@ static const size_t kRescorerNBest = 5;
     }
 
     NSMutableArray *candidatesArray = [[NSMutableArray alloc] init];
+    NSInteger displayedIndex = -1;
     for (const auto& c : candidates) {
+        if (displayedIndex < 0 && c.value == displayedValue && c.reading == displayedReading) {
+            displayedIndex = (NSInteger)candidatesArray.count;
+        }
+
         std::string displayText = c.value;
         if (valueCountMap[displayText] > 1) {
             displayText += " (";
@@ -2663,6 +2681,17 @@ static const size_t kRescorerNBest = 5;
 
         InputStateCandidate *candidate = [[InputStateCandidate alloc] initWithReading:r value:v displayText:dt rawValue:rv];
         [candidatesArray addObject:candidate];
+    }
+
+    // If the rescorer (or any later pass) made the displayed value differ from
+    // the top unigram, move it to the front so it is the candidate window's
+    // default selection -- both the custom and the system-native IMK windows
+    // highlight index 0. In the common case the displayed value already is the
+    // top candidate and this is a no-op.
+    if (displayedIndex > 0 && displayedIndex < (NSInteger)candidatesArray.count) {
+        InputStateCandidate *displayedCandidate = candidatesArray[displayedIndex];
+        [candidatesArray removeObjectAtIndex:displayedIndex];
+        [candidatesArray insertObject:displayedCandidate atIndex:0];
     }
 
     InputStateChoosingCandidate *state = [[InputStateChoosingCandidate alloc] initWithComposingBuffer:inputting.composingBuffer cursorIndex:inputting.cursorIndex candidates:candidatesArray useVerticalMode:useVerticalMode];
