@@ -86,6 +86,48 @@
 "Neural Rescorer On" = "神經網路重新評分：開啟";
 "Neural Rescorer Off" = "神經網路重新評分：關閉";
 
+/* Debug / Inspector preferences pane. */
+"Debug" = "除錯";
+"Bopomofo Key Sequence" = "注音按鍵序列";
+"Type Bopomofo keys in English (ABC) mode, e.g. su3 cl3 (= 你好)" = "用英文（ABC）模式輸入注音按鍵，例如 su3 cl3（＝你好）";
+"Type the same keys as when typing normally; the field shows the converted readings live. Use Space for a first-tone syllable." = "照平常打字的按鍵輸入即可，輸入框會即時顯示轉換後的注音；一聲音節請用空白鍵提交。";
+"keys: %@" = "按鍵：%@";
+"Shortcuts: ⌫ deletes a key · ⌥⌫ a syllable · esc clears · ⌘A then ⌫ clears · ⌘C/⌘X/⌘V copy/cut/paste keys" = "快捷鍵：⌫ 刪一鍵 · ⌥⌫ 刪一個音節 · esc 清空 · ⌘A 再按 ⌫ 清空 · ⌘C/⌘X/⌘V 複製/剪下/貼上按鍵";
+"e.g. su3 cl3 (= 你好). Switch to English (ABC) input first." = "例如 su3 cl3（＝你好）。請先切換到英文（ABC）輸入。";
+"Type the same keys as when typing normally; the standard layout converts them to readings. Use Space for a first-tone syllable." = "照平常打字的按鍵輸入即可，系統會用標準鍵盤佈局轉換成注音；一聲音節請用空白鍵提交。";
+"Non-ASCII characters detected — switch to English (ABC) input." = "偵測到非 ASCII 字元——請切換到英文（ABC）輸入。";
+"Type a Bopomofo key sequence above to inspect the engine." = "在上方輸入注音按鍵序列以檢視引擎決策。";
+"Parsed Readings" = "解析出的注音";
+"(none)" = "（無）";
+"Rescorer: off" = "重新評分：關閉";
+"Rescorer: not loaded" = "重新評分：未載入模型";
+"Rescorer: on (λ=%.2f)" = "重新評分：開啟（λ=%.2f）";
+"walk %llu µs" = "walk %llu µs";
+"rescore %llu µs" = "rescore %llu µs";
+"Original Walk" = "原始 walk";
+"After Rescoring" = "重新評分後";
+"(unchanged)" = "（未變動）";
+"Rescorer model is not bundled; only the original walk is shown." = "未內建重新評分模型，只顯示原始 walk。";
+"Neural rescorer is disabled (toggle it in the input menu)." = "神經網路重新評分已關閉（可在輸入選單切換）。";
+"less likely" = "較不可能";
+"more likely" = "較可能";
+"Candidates for “%@” (%@)" = "「%@」的候選（讀音 %@）";
+"Value" = "字詞";
+"logP" = "logP";
+"Prob." = "機率";
+"Source" = "詞來源";
+"User Phrase" = "使用者詞彙";
+"Dictionary" = "主辭典";
+"UOM (decaying)" = "UOM·衰減";
+"UOM (forced)" = "UOM·高分覆蓋";
+"UserOverrideModel suggests “%@” here (decaying)." = "此處 UserOverrideModel 建議「%@」（會隨時間衰減）。";
+"UserOverrideModel forces “%@” here (high-score)." = "此處 UserOverrideModel 強制「%@」（高分覆蓋）。";
+"N-best Paths" = "N-best 路徑";
+"Sentence" = "句子";
+"unigram" = "unigram";
+"model" = "模型";
+"combined" = "合併";
+
 "Certain Unicode symbols or characters not supported as user phrases." = "您輸入了特殊符號，我們還無法支援在這種狀況下手動加詞。";
 
 "Cursor is between \"%@\" and \"%@\"." = "游標正在「%@」與「%@」之間";

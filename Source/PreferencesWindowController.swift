@@ -24,11 +24,13 @@
 import Carbon
 import Cocoa
 import InfoCollector
+import SwiftUI
 
 extension NSToolbarItem.Identifier {
     fileprivate static let basic = NSToolbarItem.Identifier(rawValue: "basic")
     fileprivate static let userPhrases = NSToolbarItem.Identifier(rawValue: "user_phrases")
     fileprivate static let advanced = NSToolbarItem.Identifier(rawValue: "advanced")
+    fileprivate static let debug = NSToolbarItem.Identifier(rawValue: "debug")
 }
 
 private let kWindowTitleHeight: CGFloat = 78
@@ -49,6 +51,15 @@ private let kWindowTitleHeight: CGFloat = 78
     @IBOutlet weak var basicSettingsView: NSView!
     @IBOutlet weak var userPhrasesSettingsView: NSView!
     @IBOutlet weak var advancedSettingsView: NSView!
+
+    // The debug pane is built programmatically (a SwiftUI view hosted in AppKit)
+    // rather than in the xib. It is created lazily and kept alive so its input
+    // and state persist across tab switches.
+    private lazy var debugSettingsView: NSView = {
+        let hosting = NSHostingView(rootView: RescorerDebugView())
+        hosting.frame = NSRect(x: 0, y: 0, width: 800, height: 720)
+        return hosting
+    }()
 
     @IBOutlet weak var addPhraseHookPathField: NSTextField!
 
@@ -355,16 +366,22 @@ extension PreferencesWindowController: NSToolbarDelegate {
         window?.title = NSLocalizedString("Advanced", comment: "")
     }
 
+    @objc func showDebugView(_ sender: Any?) {
+        use(view: debugSettingsView)
+        window?.toolbar?.selectedItemIdentifier = .debug
+        window?.title = NSLocalizedString("Debug", comment: "")
+    }
+
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.basic, .userPhrases, .advanced]
+        [.basic, .userPhrases, .advanced, .debug]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.basic, .userPhrases, .advanced]
+        [.basic, .userPhrases, .advanced, .debug]
     }
 
     func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.basic, .userPhrases, .advanced]
+        [.basic, .userPhrases, .advanced, .debug]
     }
 
     func toolbar(
@@ -401,6 +418,15 @@ extension PreferencesWindowController: NSToolbarDelegate {
                 item.image = NSImage(named: NSImage.advancedName)
             }
             item.action = #selector(showAdvancedView(_:))
+        case .debug:
+            let title = NSLocalizedString("Debug", comment: "")
+            item.label = title
+            if #available(macOS 11.0, *) {
+                item.image = NSImage(systemSymbolName: "ladybug", accessibilityDescription: title)
+            } else {
+                item.image = NSImage(named: NSImage.advancedName)
+            }
+            item.action = #selector(showDebugView(_:))
         default:
             return nil
         }
