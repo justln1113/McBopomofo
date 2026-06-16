@@ -182,6 +182,38 @@ class ReadingGrid {
 
   WalkResult walk();
 
+  // One candidate sentence produced by walkNBest. Unlike WalkResult (which is
+  // a sequence of nodes, each yielding its top/overridden unigram), an NBestPath
+  // records the *specific* value chosen at every node. This matters because the
+  // important disambiguation (一你 vs 依你) is between two unigrams of the *same*
+  // node, not between different nodes -- so a path must commit to a value, not
+  // just a node, to express that alternative.
+  struct NBestPath {
+    std::vector<std::string> values;    // chosen value per node, in order
+    std::vector<std::string> readings;  // reading per node (combined for phrases)
+    double score = 0.0;                 // sum of the chosen unigram scores
+
+    [[nodiscard]] const std::vector<std::string>& valuesAsStrings() const {
+      return values;
+    }
+  };
+
+  // Finds up to k highest-scoring distinct candidate sentences, in descending
+  // order of total score (result[0] is identical in value to what walk()
+  // returns). This is intended to feed a second-pass re-ranker (such as a
+  // neural rescorer) that can apply longer-range context than the unigram walk.
+  //
+  // Unlike a textbook K-shortest-paths (which tends to enumerate paths that
+  // differ only in a single low-frequency character at one position), this uses
+  // a per-position top-m beam where each beam entry commits to a (node, unigram)
+  // pair. The practical effect is that the alternative paths differ at the
+  // genuine homophone branch points (e.g. 一你 vs 依你), which is exactly what a
+  // rescorer needs to arbitrate. The internal beam width is derived from k.
+  //
+  // Note: this ignores node overrides and ranks purely by unigram scores, since
+  // its purpose is to enumerate raw alternatives for a rescorer.
+  std::vector<NBestPath> walkNBest(size_t k);
+
   struct Candidate {
     Candidate(std::string r, std::string v, std::string rv = "")
         : reading(std::move(r)), value(std::move(v)), rawValue(std::move(rv)) {}

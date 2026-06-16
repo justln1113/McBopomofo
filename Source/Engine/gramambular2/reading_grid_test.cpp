@@ -24,6 +24,7 @@
 #include "reading_grid.h"
 
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -815,6 +816,136 @@ TEST(ReadingGridTest, FindInSpan2) {
   ASSERT_EQ(result->get()->spanningLength(), 2);
   ASSERT_EQ(result->get()->reading(), "ㄍㄠㄖㄜˋ");
   ASSERT_EQ(result->get()->value(), "高熱");
+}
+
+// Data that reproduces the homophone-disambiguation scenario: reading "ㄧ"
+// has several homophones where the single-char "一" outscores "依", and the
+// phrase "一你"/"依你" does NOT exist as a multi-char node, so the plain walk
+// is forced to pick the top single char at the isolated position.
+constexpr char kHomophoneData[] = R"(
+ㄧ 一 -2.08214539
+ㄧ 醫 -3.44703033
+ㄧ 依 -3.64082381
+ㄧ 衣 -4.00449553
+ㄋㄧˇ 你 -3.20000000
+ㄋㄧˇ 妳 -5.50000000
+)";
+
+TEST(ReadingGridTest, WalkNBestFirstEqualsWalk) {
+  ReadingGrid grid(std::make_shared<SimpleLM>(kHomophoneData));
+  grid.setReadingSeparator("");
+  grid.insertReading("ㄧ");
+  grid.insertReading("ㄋㄧˇ");
+
+  ReadingGrid::WalkResult single = grid.walk();
+  std::vector<ReadingGrid::NBestPath> nbest = grid.walkNBest(5);
+
+  ASSERT_FALSE(nbest.empty());
+  // The top path from walkNBest must be identical in value to plain walk().
+  ASSERT_EQ(nbest[0].valuesAsStrings(), single.valuesAsStrings());
+  // Plain walk picks the highest single chars: 一你.
+  ASSERT_EQ(single.valuesAsStrings(),
+            (std::vector<std::string>{"一", "你"}));
+}
+
+TEST(ReadingGridTest, WalkNBestReturnsDistinctPaths) {
+  ReadingGrid grid(std::make_shared<SimpleLM>(kHomophoneData));
+  grid.setReadingSeparator("");
+  grid.insertReading("ㄧ");
+  grid.insertReading("ㄋㄧˇ");
+
+  std::vector<ReadingGrid::NBestPath> nbest = grid.walkNBest(4);
+  ASSERT_GE(nbest.size(), 2u);
+
+  // Paths must be in descending total score order.
+  for (size_t i = 1; i < nbest.size(); ++i) {
+    ASSERT_GE(nbest[i - 1].score, nbest[i].score);
+  }
+
+  // All returned paths must be distinct value sequences.
+  std::vector<std::vector<std::string>> seen;
+  for (const auto& w : nbest) {
+    auto v = w.valuesAsStrings();
+    ASSERT_EQ(std::find(seen.begin(), seen.end(), v), seen.end());
+    seen.push_back(v);
+  }
+}
+
+TEST(ReadingGridTest, WalkNBestExposesHomophoneBranch) {
+  ReadingGrid grid(std::make_shared<SimpleLM>(kHomophoneData));
+  grid.setReadingSeparator("");
+  grid.insertReading("ㄧ");
+  grid.insertReading("ㄋㄧˇ");
+
+  std::vector<ReadingGrid::NBestPath> nbest = grid.walkNBest(5);
+
+  // The whole point: the alternative for the first syllable (依) must surface
+  // as a candidate path so a downstream rescorer can choose 依你 over 一你.
+  // 一 and 依 are two unigrams of the *same* node, so this only works because
+  // beam entries commit to a unigram value, not just a node.
+  auto hasFirstChar = [&](const std::string& c) {
+    return std::any_of(nbest.begin(), nbest.end(), [&](const auto& w) {
+      const auto& v = w.valuesAsStrings();
+      return !v.empty() && v.front() == c;
+    });
+  };
+  ASSERT_TRUE(hasFirstChar("一"));
+  ASSERT_TRUE(hasFirstChar("依"));
+}
+
+TEST(ReadingGridTest, WalkNBestTiming) {
+  // Build a realistic-length sentence grid and time walkNBest vs walk, so we
+  // have a baseline for the cost the K-best layer adds before any rescorer.
+  ReadingGrid grid(std::make_shared<SimpleLM>(kSampleData));
+  grid.setReadingSeparator("");
+  // 高科技公司的年中獎金 == 10 syllables, mix of phrases and singles.
+  const std::vector<std::string> sentence = {
+      "ㄍㄠ", "ㄎㄜ", "ㄐㄧˋ", "ㄍㄨㄥ", "ㄙ",
+      "ㄉㄜ˙", "ㄋㄧㄢˊ", "ㄓㄨㄥ", "ㄐㄧㄤˇ", "ㄐㄧㄣ"};
+  for (const auto& r : sentence) {
+    grid.insertReading(r);
+  }
+
+  constexpr int kIters = 2000;
+  auto t0 = std::chrono::steady_clock::now();
+  for (int i = 0; i < kIters; ++i) {
+    volatile auto r = grid.walk();
+    (void)r;
+  }
+  auto t1 = std::chrono::steady_clock::now();
+  std::vector<ReadingGrid::NBestPath> nbest;
+  for (int i = 0; i < kIters; ++i) {
+    nbest = grid.walkNBest(10);
+  }
+  auto t2 = std::chrono::steady_clock::now();
+
+  double walkUs =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count() /
+      1000.0 / kIters;
+  double nbestUs =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count() /
+      1000.0 / kIters;
+  std::cout << "[ timing ] walk(): " << walkUs << " us/call, walkNBest(10): "
+            << nbestUs << " us/call, paths returned: " << nbest.size() << "\n";
+  // Sanity: the K-best layer is cheap relative to a per-keystroke budget
+  // (tens of ms). This is a soft ceiling, generous to avoid CI flakiness.
+  ASSERT_LT(nbestUs, 2000.0);
+}
+
+TEST(ReadingGridTest, WalkNBestKZeroAndEmpty) {
+  ReadingGrid grid(std::make_shared<SimpleLM>(kHomophoneData));
+  grid.setReadingSeparator("");
+
+  // Empty grid yields no paths.
+  ASSERT_TRUE(grid.walkNBest(5).empty());
+
+  grid.insertReading("ㄧ");
+  // k == 0 yields no paths.
+  ASSERT_TRUE(grid.walkNBest(0).empty());
+  // k == 1 behaves like walk().
+  auto nbest = grid.walkNBest(1);
+  ASSERT_EQ(nbest.size(), 1u);
+  ASSERT_EQ(nbest[0].valuesAsStrings(), grid.walk().valuesAsStrings());
 }
 
 }  // namespace Formosa::Gramambular2

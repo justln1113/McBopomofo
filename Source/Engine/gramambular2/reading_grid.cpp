@@ -203,6 +203,126 @@ ReadingGrid::WalkResult ReadingGrid::walk() {
   return result;
 }
 
+std::vector<ReadingGrid::NBestPath> ReadingGrid::walkNBest(size_t k) {
+  std::vector<NBestPath> results;
+  if (spans_.empty() || k == 0) {
+    return results;
+  }
+
+  // A partial path ending at some grid position. Crucially each entry commits to
+  // a specific unigram of a node (not just the node), so that homophones of the
+  // *same* node (一 vs 依 for reading ㄧ) become distinct competing paths -- the
+  // whole reason this exists.
+  struct BeamEntry {
+    double score = -std::numeric_limits<double>::infinity();
+    size_t fromIndex = 0;
+    // Index into viterbi[fromIndex] identifying which predecessor partial path
+    // this entry extends, enabling back-tracking of each distinct path.
+    size_t fromBeam = 0;
+    NodePtr node = nullptr;       // nullptr only for the seed entry at cell 0
+    std::string value;           // the chosen unigram value at this node
+  };
+
+  // Beam width. We keep a few more partial paths per cell than k, because
+  // distinct full paths can share suffixes and collapse during de-duplication;
+  // a slightly wider beam keeps enough diversity to still return k of them.
+  const size_t beamWidth = std::max<size_t>(k + 2, 4);
+  // Per node, how many top homophones to branch on. Bounded so a node with a
+  // huge homophone list (e.g. ㄧ) doesn't blow up the beam; the unigrams are
+  // already score-ranked, so the first few are the only plausible alternatives.
+  const size_t maxUnigramsPerNode = beamWidth;
+
+  const size_t readingLen = readings_.size();
+  std::vector<std::vector<BeamEntry>> viterbi(readingLen + 1);
+  viterbi[0].push_back(BeamEntry{0.0, 0, 0, nullptr, ""});
+
+  // Prune a cell to the beam width. Must be applied to a cell *before* it is
+  // used as a source for forward expansion, otherwise the beam multiplies cell
+  // by cell and blows up exponentially with sentence length.
+  auto pruneCell = [&](std::vector<BeamEntry>& cell) {
+    std::stable_sort(cell.begin(), cell.end(),
+                     [](const BeamEntry& a, const BeamEntry& b) {
+                       return a.score > b.score;
+                     });
+    if (cell.size() > beamWidth) {
+      cell.resize(beamWidth);
+    }
+  };
+
+  for (size_t i = 0; i < readingLen; ++i) {
+    // Cell i has all its incoming transitions by now (edges only point
+    // forward and we visit positions in order), so prune it before it feeds
+    // the next cells. This bounds every source cell to beamWidth.
+    pruneCell(viterbi[i]);
+    if (viterbi[i].empty()) {
+      continue;
+    }
+
+    const Span& span = spans_[i];
+    const size_t maxSpanLen = span.maxLength();
+
+    for (size_t spanLen = 1; spanLen <= maxSpanLen; ++spanLen) {
+      const NodePtr& node = span.nodeOf(spanLen);
+      if (node == nullptr) {
+        continue;
+      }
+
+      const auto& unigrams = node->unigrams();
+      const size_t uCount = std::min(unigrams.size(), maxUnigramsPerNode);
+      std::vector<BeamEntry>& target = viterbi[i + spanLen];
+      // For every partial path reaching i, branch on each top homophone.
+      for (size_t b = 0; b < viterbi[i].size(); ++b) {
+        const double base = viterbi[i][b].score;
+        for (size_t u = 0; u < uCount; ++u) {
+          target.push_back(BeamEntry{base + unigrams[u].score(), i, b, node,
+                                     unigrams[u].value()});
+        }
+      }
+    }
+  }
+
+  // The terminal cell is never a source, so prune it here.
+  pruneCell(viterbi[readingLen]);
+
+  // Reconstruct one full path per surviving terminal beam entry.
+  std::vector<std::string> seenKeys;
+  for (size_t t = 0; t < viterbi[readingLen].size() && results.size() < k;
+       ++t) {
+    NBestPath path;
+    size_t curr = readingLen;
+    size_t beam = t;
+    while (curr > 0) {
+      const BeamEntry& entry = viterbi[curr][beam];
+      if (entry.node == nullptr) {
+        break;
+      }
+      path.values.push_back(entry.value);
+      path.readings.push_back(entry.node->reading());
+      curr = entry.fromIndex;
+      beam = entry.fromBeam;
+    }
+    std::reverse(path.values.begin(), path.values.end());
+    std::reverse(path.readings.begin(), path.readings.end());
+    // Total score is the terminal entry's accumulated score.
+    path.score = viterbi[readingLen][t].score;
+
+    // De-duplicate: different beam entries can backtrack to the same sequence
+    // of values once suffixes merge.
+    std::string key;
+    for (const std::string& v : path.values) {
+      key += v;
+      key += '\x1f';
+    }
+    if (std::find(seenKeys.begin(), seenKeys.end(), key) != seenKeys.end()) {
+      continue;
+    }
+    seenKeys.push_back(std::move(key));
+    results.push_back(std::move(path));
+  }
+
+  return results;
+}
+
 std::vector<ReadingGrid::Candidate> ReadingGrid::candidatesAt(size_t loc) {
   std::vector<ReadingGrid::Candidate> result;
   if (readings_.empty()) {
