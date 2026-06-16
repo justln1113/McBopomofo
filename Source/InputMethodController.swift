@@ -205,7 +205,7 @@ class McBopomofoInputMethodController: IMKInputController {
         associatedPhrasesItem.state = Preferences.associatedPhrasesEnabled.state
 
         let neuralRescorerItem = menu.addItem(
-            withTitle: NSLocalizedString("Neural Rescorer (Long-Range Correction)", comment: ""),
+            withTitle: NSLocalizedString("Neural Rescorer", comment: ""),
             action: #selector(toggleNeuralRescorer(_:)), keyEquivalent: "")
         neuralRescorerItem.state = Preferences.neuralRescorerEnabled.state
 

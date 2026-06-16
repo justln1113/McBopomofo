@@ -82,7 +82,7 @@
 "Half-Width Punctuation Off" = "已經切回到全形標點模式";
 
 "Associated Phrases" = "聯想詞";
-"Neural Rescorer (Long-Range Correction)" = "神經網路重新評分（長距離校正）";
+"Neural Rescorer" = "神經網路重新評分";
 "Neural Rescorer On" = "神經網路重新評分：開啟";
 "Neural Rescorer Off" = "神經網路重新評分：關閉";
 
