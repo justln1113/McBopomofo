@@ -77,6 +77,12 @@ static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
     std::shared_ptr<McBopomofo::LstmRescorerModel> _rescorerModel;
     std::unique_ptr<McBopomofo::NeuralRescorer> _neuralRescorer;
     BOOL _rescorerLoadAttempted;
+    // Cache so repeated _walk calls that don't change the grid state relevant to
+    // rescoring (cursor moves, candidate-window navigation) reuse the prior
+    // result instead of re-running walkNBest + the model.
+    std::string _lastRescoreKey;
+    Formosa::Gramambular2::ReadingGrid::WalkResult _lastRescoredWalk;
+    BOOL _hasRescoreCache;
 
     NSString *_inputMode;
 }
@@ -314,6 +320,7 @@ static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
     if (_neuralRescorer != nullptr) {
         _neuralRescorer->clearCache();
     }
+    _hasRescoreCache = NO;
 }
 
 - (void)handleForceCommitWithStateCallback:(void (^)(InputState *))stateCallback
@@ -2599,15 +2606,34 @@ static const size_t kRescorerNBest = 5;
     if (_neuralRescorer == nullptr) {
         return;
     }
-    std::vector<Formosa::Gramambular2::ReadingGrid::NBestPath> paths =
-        _grid->walkNBest(kRescorerNBest);
-    if (paths.size() < 2) {
+
+    // (A) Skip the costly rescore when the grid state it depends on is
+    // unchanged. The readings, chosen values and override flags of the plain
+    // walk fully determine the result; cursor moves and candidate-window
+    // navigation re-walk but don't change them.
+    std::string key;
+    for (const auto& node : _latestWalk.nodes) {
+        key += node->reading();
+        key += '\x1f';
+        key += node->value();
+        key += node->isOverridden() ? "\x1f" "1" "\x1e" : "\x1f" "0" "\x1e";
+    }
+    if (_hasRescoreCache && key == _lastRescoreKey) {
+        _latestWalk = _lastRescoredWalk;
         return;
     }
-    size_t best = _neuralRescorer->rerankBestIndex(paths);
-    if (best != 0 && best < paths.size()) {
-        _latestWalk = _grid->walkResultFromPath(paths[best]);
+
+    std::vector<Formosa::Gramambular2::ReadingGrid::NBestPath> paths =
+        _grid->walkNBest(kRescorerNBest);
+    if (paths.size() >= 2) {
+        size_t best = _neuralRescorer->rerankBestIndex(paths);
+        if (best != 0 && best < paths.size()) {
+            _latestWalk = _grid->walkResultFromPath(paths[best]);
+        }
     }
+    _lastRescoreKey = std::move(key);
+    _lastRescoredWalk = _latestWalk;
+    _hasRescoreCache = YES;
 }
 
 - (InputStateChoosingCandidate *)_buildCandidateStateFromInputtingState:(InputStateInputting *)inputting useVerticalMode:(BOOL)useVerticalMode
