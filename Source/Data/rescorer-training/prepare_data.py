@@ -57,10 +57,16 @@ def clean_text(raw: str) -> str:
     s = _html_tag.sub(" ", s)
     s = _html_entity.sub(" ", s)
     s = _md_marks.sub(" ", s)
-    # NFKC turns fullwidth punct into halfwidth/ASCII for some marks; re-map the
-    # few ASCII ones the IME would emit as fullwidth back to fullwidth.
+    # NFKC turns fullwidth punct into halfwidth/ASCII for several marks; re-map
+    # the ones the IME emits as fullwidth back to fullwidth, otherwise _keep_run
+    # treats them as boundaries and drops them (which silently deleted ALL
+    # parentheses, tildes and ellipses from the corpus). Collapse runs of dots
+    # to a single ellipsis first (NFKC also turns … into "..."). We deliberately
+    # leave a lone "." alone -- it is a decimal point between kept digits.
+    s = re.sub(r"\.{2,}", "…", s)
     s = (s.replace(",", "，").replace("?", "？").replace("!", "！")
-          .replace(";", "；").replace(":", "："))
+          .replace(";", "；").replace(":", "：")
+          .replace("(", "（").replace(")", "）").replace("~", "～"))
     return s
 
 
