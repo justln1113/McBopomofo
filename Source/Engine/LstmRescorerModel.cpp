@@ -29,6 +29,10 @@
 #include <limits>
 #include <stdexcept>
 
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
+
 #include "UTF8Helper.h"
 
 namespace McBopomofo {
@@ -40,6 +44,31 @@ constexpr uint32_t kDtypeFloat32 = 0;
 constexpr uint32_t kDtypeInt8 = 1;
 
 inline double Sigmoid(double x) { return 1.0 / (1.0 + std::exp(-x)); }
+
+// Dot product of two length-n float vectors. NEON-vectorized on arm64 (the ship
+// target); the matrix-vector products in the LSTM step and the projection are
+// the inference hot path. A plain scalar fallback keeps other platforms (and the
+// tiny unit-test model, whose n=1 dims never enter the vector loop) identical.
+inline float Dot(const float* a, const float* b, size_t n) {
+#if defined(__ARM_NEON) && !defined(MCB_RESCORER_FORCE_SCALAR)
+  float32x4_t acc = vdupq_n_f32(0.0f);
+  size_t i = 0;
+  for (; i + 4 <= n; i += 4) {
+    acc = vmlaq_f32(acc, vld1q_f32(a + i), vld1q_f32(b + i));
+  }
+  float sum = vaddvq_f32(acc);
+  for (; i < n; ++i) {
+    sum += a[i] * b[i];
+  }
+  return sum;
+#else
+  float sum = 0.0f;
+  for (size_t i = 0; i < n; ++i) {
+    sum += a[i] * b[i];
+  }
+  return sum;
+#endif
+}
 
 // A forward cursor over the raw weight-file bytes. Every read is bounds-checked
 // and throws on overrun so a truncated or malformed file fails loudly at load
@@ -236,35 +265,20 @@ void LstmRescorerModel::lstmStep(int tokenId, const float* hPrev,
   const float* x = embedWeight_.data() + static_cast<size_t>(tokenId) * E;
 
   for (size_t r = 0; r < H; ++r) {
-    // Gate rows are packed [i (0..H), f (H..2H), g (2H..3H), o (3H..4H)].
-    double preI = static_cast<double>(bIh_[r]) + bHh_[r];
-    double preF = static_cast<double>(bIh_[H + r]) + bHh_[H + r];
-    double preG = static_cast<double>(bIh_[2 * H + r]) + bHh_[2 * H + r];
-    double preO = static_cast<double>(bIh_[3 * H + r]) + bHh_[3 * H + r];
-
-    const float* wiI = wIh_.data() + (r) * E;
-    const float* wiF = wIh_.data() + (H + r) * E;
-    const float* wiG = wIh_.data() + (2 * H + r) * E;
-    const float* wiO = wIh_.data() + (3 * H + r) * E;
-    for (size_t e = 0; e < E; ++e) {
-      double xe = x[e];
-      preI += wiI[e] * xe;
-      preF += wiF[e] * xe;
-      preG += wiG[e] * xe;
-      preO += wiO[e] * xe;
-    }
-
-    const float* whI = wHh_.data() + (r) * H;
-    const float* whF = wHh_.data() + (H + r) * H;
-    const float* whG = wHh_.data() + (2 * H + r) * H;
-    const float* whO = wHh_.data() + (3 * H + r) * H;
-    for (size_t k = 0; k < H; ++k) {
-      double hk = hPrev[k];
-      preI += whI[k] * hk;
-      preF += whF[k] * hk;
-      preG += whG[k] * hk;
-      preO += whO[k] * hk;
-    }
+    // Gate rows are packed [i (0..H), f (H..2H), g (2H..3H), o (3H..4H)]; each
+    // pre-activation is bias + W_ih[row].x + W_hh[row].hPrev.
+    double preI = static_cast<double>(bIh_[r]) + bHh_[r] +
+                  Dot(wIh_.data() + r * E, x, E) +
+                  Dot(wHh_.data() + r * H, hPrev, H);
+    double preF = static_cast<double>(bIh_[H + r]) + bHh_[H + r] +
+                  Dot(wIh_.data() + (H + r) * E, x, E) +
+                  Dot(wHh_.data() + (H + r) * H, hPrev, H);
+    double preG = static_cast<double>(bIh_[2 * H + r]) + bHh_[2 * H + r] +
+                  Dot(wIh_.data() + (2 * H + r) * E, x, E) +
+                  Dot(wHh_.data() + (2 * H + r) * H, hPrev, H);
+    double preO = static_cast<double>(bIh_[3 * H + r]) + bHh_[3 * H + r] +
+                  Dot(wIh_.data() + (3 * H + r) * E, x, E) +
+                  Dot(wHh_.data() + (3 * H + r) * H, hPrev, H);
 
     double i = Sigmoid(preI);
     double f = Sigmoid(preF);
@@ -287,11 +301,8 @@ double LstmRescorerModel::logSoftmaxFull(int tokenId, const float* h) const {
   std::vector<double> logits(V);
   double maxLogit = -std::numeric_limits<double>::infinity();
   for (size_t t = 0; t < V; ++t) {
-    const float* w = projWeight_.data() + t * H;
-    double l = projBias_[t];
-    for (size_t k = 0; k < H; ++k) {
-      l += w[k] * h[k];
-    }
+    double l = static_cast<double>(projBias_[t]) +
+               Dot(projWeight_.data() + t * H, h, H);
     logits[t] = l;
     if (l > maxLogit) {
       maxLogit = l;
