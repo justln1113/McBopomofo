@@ -108,12 +108,12 @@ def _is_good_line(line: str, ended: bool) -> bool:
     return True
 
 
-def iter_corpus(max_chars: int, limit_docs: int | None):
-    """Stream documents from the datasets, cleaning and splitting, until
-    max_chars characters of output have been produced."""
+def iter_corpus(limit_docs: int | None):
+    """Stream documents from the datasets, cleaning and splitting into
+    sentence-ish lines. The caller is responsible for honoring the output-size
+    budget (after dedup) and stopping iteration; this just yields lines."""
     from datasets import load_dataset
 
-    produced = 0
     for name, config, split, field in DATASETS:
         print(f"[prepare] streaming {name} (field={field})", file=sys.stderr)
         try:
@@ -130,16 +130,10 @@ def iter_corpus(max_chars: int, limit_docs: int | None):
             cleaned = clean_text(raw)
             for line in split_sentences(cleaned):
                 yield line
-                produced += len(line) + 1
-                if produced >= max_chars:
-                    print(f"[prepare] reached max-chars={max_chars}",
-                          file=sys.stderr)
-                    return
             docs += 1
             if limit_docs and docs >= limit_docs:
                 break
-        print(f"[prepare] {name}: {docs} docs, {produced} chars so far",
-              file=sys.stderr)
+        print(f"[prepare] {name}: {docs} docs done", file=sys.stderr)
 
 
 def main():
@@ -150,21 +144,44 @@ def main():
                     help="stop after this many output characters")
     ap.add_argument("--limit-docs", type=int, default=None,
                     help="optional cap on docs per dataset (for quick tests)")
+    ap.add_argument("--no-dedup", dest="dedup", action="store_false",
+                    help="keep exact-duplicate lines (default: drop them). "
+                         "Repeated lines (wiki boilerplate, copy-pasted "
+                         "fragments) bias the LM toward those exact strings.")
     args = ap.parse_args()
 
+    # Exact-line dedup, streaming. We store 64-bit hashes rather than the full
+    # lines so the seen-set stays ~64MB even at tens of millions of lines; a
+    # hash collision would at worst drop one extra legitimate line (probability
+    # is negligible at our scale, and the cost of one dropped line is nil).
+    seen: set[int] = set()
     n_lines = 0
     n_chars = 0
+    n_dups = 0
     with open(args.out, "w", encoding="utf-8") as f:
-        for line in iter_corpus(args.max_chars, args.limit_docs):
+        for line in iter_corpus(args.limit_docs):
+            if args.dedup:
+                h = hash(line)
+                if h in seen:
+                    n_dups += 1
+                    continue
+                seen.add(h)
             f.write(line)
             f.write("\n")
             n_lines += 1
             n_chars += len(line) + 1
             if n_lines % 100_000 == 0:
-                print(f"[prepare] {n_lines} lines, {n_chars} chars",
+                print(f"[prepare] {n_lines} lines, {n_chars} chars "
+                      f"({n_dups} dups dropped)", file=sys.stderr)
+            # Budget is enforced here, on deduplicated output, so corpus.txt
+            # actually reaches --max-chars of distinct training text.
+            if n_chars >= args.max_chars:
+                print(f"[prepare] reached max-chars={args.max_chars}",
                       file=sys.stderr)
+                break
 
-    print(f"[prepare] DONE: {n_lines} lines, {n_chars} chars -> {args.out}",
+    print(f"[prepare] DONE: {n_lines} lines, {n_chars} chars "
+          f"({n_dups} exact-duplicate lines dropped) -> {args.out}",
           file=sys.stderr)
 
 
