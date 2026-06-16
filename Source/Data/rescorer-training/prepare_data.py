@@ -26,10 +26,15 @@ DATASETS = [
     ("liswei/Taiwan-Text-Excellence-2B", None, "train", "text"),  # multi-domain
 ]
 
-# Characters we keep: CJK unified ideographs (+ ext A), plus the punctuation the
-# IME actually produces. Everything else (Latin, emoji, control, markup) is a
-# signal to split/drop, since the model scores Chinese fluency.
+# Characters we keep: CJK unified ideographs (+ ext A), Arabic digits, plus the
+# punctuation the IME actually produces. Everything else (Latin, emoji, control,
+# markup) is a signal to split/drop, since the model scores Chinese fluency.
 CJK = r"\p{Han}"
+# Keep digits: the IME emits them (「2024年」「第3名」), and dropping them split
+# 「1956年10月29日，…」 at every digit, orphaning the unit char (年/月/日) onto the
+# next line — ~25% of wiki lines started with such residue. NFKC has already
+# folded fullwidth ０-９ to these ASCII digits, so this covers both forms.
+DIGITS = "0-9"
 # Standard Chinese punctuation McBopomofo emits.
 KEEP_PUNCT = "，。、；：？！「」『』（）《》〈〉…—～·．"
 SENTENCE_END = "。？！…"
@@ -39,8 +44,9 @@ _html_entity = re.compile(r"&[a-zA-Z#0-9]+;")
 _md_link = re.compile(r"\[([^\]]*)\]\([^)]*\)")  # [text](url) -> text
 _md_marks = re.compile(r"[*_`#>|]+")
 _ws = re.compile(r"\s+")
-# A run of allowed chars (Han + kept punctuation). Anything else is a boundary.
-_keep_run = re.compile(rf"[{CJK}{re.escape(KEEP_PUNCT)}]+")
+# A run of allowed chars (Han + digits + kept punctuation). Anything else is a
+# boundary.
+_keep_run = re.compile(rf"[{CJK}{DIGITS}{re.escape(KEEP_PUNCT)}]+")
 
 
 def clean_text(raw: str) -> str:
