@@ -204,6 +204,11 @@ class McBopomofoInputMethodController: IMKInputController {
             action: #selector(toggleAssociatedPhrasesEnabled(_:)), keyEquivalent: "")
         associatedPhrasesItem.state = Preferences.associatedPhrasesEnabled.state
 
+        let neuralRescorerItem = menu.addItem(
+            withTitle: NSLocalizedString("Neural Rescorer (Long-Range Correction)", comment: ""),
+            action: #selector(toggleNeuralRescorer(_:)), keyEquivalent: "")
+        neuralRescorerItem.state = Preferences.neuralRescorerEnabled.state
+
         let inputMode = keyHandler.inputMode
 
         // Only Bopomofo mode supports Bopomofo Font Annotation. If support is
@@ -416,6 +421,18 @@ class McBopomofoInputMethodController: IMKInputController {
             message: enabled
                 ? NSLocalizedString("Chinese Conversion On", comment: "")
                 : NSLocalizedString("Chinese Conversion Off", comment: ""))
+        if let currentClient = currentClient {
+            keyHandler.clear()
+            self.handle(state: InputState.Empty(), client: currentClient)
+        }
+    }
+
+    @objc func toggleNeuralRescorer(_ sender: Any?) {
+        let enabled = Preferences.toggleNeuralRescorerEnabled()
+        NotifierController.notify(
+            message: enabled
+                ? NSLocalizedString("Neural Rescorer On", comment: "")
+                : NSLocalizedString("Neural Rescorer Off", comment: ""))
         if let currentClient = currentClient {
             keyHandler.clear()
             self.handle(state: InputState.Empty(), client: currentClient)

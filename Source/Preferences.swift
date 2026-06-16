@@ -309,6 +309,11 @@ class Preferences: NSObject {
     @UserDefault(key: kNeuralRescorerEnabledKey, defaultValue: false)
     @objc static var neuralRescorerEnabled: Bool
 
+    @objc static func toggleNeuralRescorerEnabled() -> Bool {
+        neuralRescorerEnabled = !neuralRescorerEnabled
+        return neuralRescorerEnabled
+    }
+
     @objc static func toggleChineseConversionEnabled() -> Bool {
         chineseConversionEnabled = !chineseConversionEnabled
         return chineseConversionEnabled
