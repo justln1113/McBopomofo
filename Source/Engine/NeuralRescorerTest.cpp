@@ -308,6 +308,35 @@ TEST(NeuralRescorerTest, UserOverrideIsNotReranked) {
             (std::vector<std::string>{"醫", "你"}));
 }
 
+TEST(NeuralRescorerTest, UserPhraseIsNotReranked) {
+  // A top candidate whose value came from a user-defined phrase (flagged via
+  // fromUserPhrase, not an override) must also be protected from reranking.
+  // Construct paths directly to isolate the flag's effect on the rescorer.
+  ReadingGrid::NBestPath top;
+  top.values = {"依", "你"};
+  top.readings = {"ㄧ", "ㄋㄧˇ"};
+  top.overridden = {false, false};
+  top.fromUserPhrase = {true, false};  // 依 is a user phrase here
+  top.score = -10.0;
+
+  ReadingGrid::NBestPath alt;
+  alt.values = {"一", "你"};
+  alt.readings = {"ㄧ", "ㄋㄧˇ"};
+  alt.overridden = {false, false};
+  alt.fromUserPhrase = {false, false};
+  alt.score = -9.0;  // higher unigram score than top
+
+  ASSERT_TRUE(top.hasUserOverride());  // the user-phrase flag counts as intent
+  std::vector<ReadingGrid::NBestPath> candidates = {top, alt};
+
+  // Even a model that strongly prefers 一你 must not flip the user phrase.
+  auto model = std::make_shared<RuleBasedMockModel>();
+  NeuralRescorer rescorer(model, /*lambda=*/100.0);
+  const auto& best = rescorer.rerank(candidates);
+  ASSERT_EQ(best.valuesAsStrings(),
+            (std::vector<std::string>{"依", "你"}));
+}
+
 TEST(NeuralRescorerTest, Timing) {
   // Build a realistic 10-syllable grid and time the full walkNBest -> rerank
   // pipeline with a constant model (isolates orchestration cost from model

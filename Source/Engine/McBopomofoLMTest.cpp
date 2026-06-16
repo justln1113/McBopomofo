@@ -85,6 +85,8 @@ TEST(McBopomofoLMTest, PrimaryLanguageModel) {
   ASSERT_FALSE(unigrams.empty());
   EXPECT_EQ(unigrams[0].value(), "名詞");
   EXPECT_LT(unigrams[0].score(), 0);
+  // Dictionary-sourced unigrams must not be flagged as user phrases.
+  EXPECT_FALSE(unigrams[0].isFromUserPhrase());
 }
 
 TEST(McBopomofoLMTest, AssociatedPhrasesV2) {
@@ -112,6 +114,9 @@ TEST(McBopomofoLMTest, UserPhrases) {
   auto unigrams = lm.getUnigrams("ㄇㄧㄥˊ");
   ASSERT_FALSE(unigrams.empty());
   EXPECT_EQ(unigrams[0].value(), "茗");
+  // The user phrase must be flagged so a re-ranker won't overrule it. "茗" is a
+  // single syllable, so it goes through the boosted-rewrite branch.
+  EXPECT_TRUE(unigrams[0].isFromUserPhrase());
 }
 
 TEST(McBopomofoLMTest, ExcludedPhrases) {

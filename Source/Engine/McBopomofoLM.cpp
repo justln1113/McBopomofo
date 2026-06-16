@@ -193,8 +193,16 @@ McBopomofoLM::getUnigrams(const std::string& key) {
   // would always result in "丼" + "作" instead of "動作" because the
   // node for "丼" would dominate the walk.
   if (isKeyMultiSyllable || allUnigrams.empty()) {
-    allUnigrams.insert(allUnigrams.begin(), userUnigrams.begin(),
-                       userUnigrams.end());
+    // Tag these as user-phrase sourced so a re-ranker won't overrule them.
+    std::vector<Formosa::Gramambular2::LanguageModel::Unigram> taggedUserUnigrams;
+    taggedUserUnigrams.reserve(userUnigrams.size());
+    for (const auto& unigram : userUnigrams) {
+      taggedUserUnigrams.emplace_back(unigram.value(), unigram.score(),
+                                      unigram.rawValue(),
+                                      /*fromUserPhrase=*/true);
+    }
+    allUnigrams.insert(allUnigrams.begin(), taggedUserUnigrams.begin(),
+                       taggedUserUnigrams.end());
   } else if (!userUnigrams.empty()) {
     // Find the highest score from the existing allUnigrams.
     double topScore = std::numeric_limits<double>::lowest();
@@ -209,7 +217,9 @@ McBopomofoLM::getUnigrams(const std::string& key) {
     std::vector<Formosa::Gramambular2::LanguageModel::Unigram>
         rewrittenUserUnigrams;
     for (const auto& unigram : userUnigrams) {
-      rewrittenUserUnigrams.emplace_back(unigram.value(), boostedScore);
+      rewrittenUserUnigrams.emplace_back(unigram.value(), boostedScore,
+                                         /*rawValue=*/"",
+                                         /*fromUserPhrase=*/true);
     }
     allUnigrams.insert(allUnigrams.begin(), rewrittenUserUnigrams.begin(),
                        rewrittenUserUnigrams.end());

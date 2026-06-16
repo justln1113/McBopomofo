@@ -200,16 +200,22 @@ class ReadingGrid {
     // because that provenance is not available at this layer (it would require
     // threading a flag through LanguageModel::Unigram). That remains a known gap.
     std::vector<bool> overridden;
+    // Parallel to values: whether the chosen value at that position came from a
+    // user-defined phrase. Together with `overridden`, this lets a re-ranker
+    // identify every position that carries explicit user intent.
+    std::vector<bool> fromUserPhrase;
     double score = 0.0;                 // sum of the chosen unigram scores
 
     [[nodiscard]] const std::vector<std::string>& valuesAsStrings() const {
       return values;
     }
 
-    // True if any node on this path carries explicit user override intent.
+    // True if any node on this path carries explicit user intent: either an
+    // override (manual selection / UOM) or a user-defined phrase.
     [[nodiscard]] bool hasUserOverride() const {
-      for (bool o : overridden) {
-        if (o) {
+      for (size_t i = 0; i < overridden.size(); ++i) {
+        if (overridden[i] ||
+            (i < fromUserPhrase.size() && fromUserPhrase[i])) {
           return true;
         }
       }

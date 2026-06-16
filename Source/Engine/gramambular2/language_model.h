@@ -46,17 +46,25 @@ class LanguageModel {
   class Unigram {
    public:
     explicit Unigram(std::string val = "", double sc = 0,
-                     std::string rawValue = "")
-        : value_(std::move(val)), score_(sc), rawValue_(std::move(rawValue)) {}
+                     std::string rawValue = "", bool fromUserPhrase = false)
+        : value_(std::move(val)),
+          score_(sc),
+          rawValue_(std::move(rawValue)),
+          fromUserPhrase_(fromUserPhrase) {}
 
     [[nodiscard]] const std::string& value() const { return value_; }
     [[nodiscard]] const std::string& rawValue() const { return rawValue_; }
     [[nodiscard]] double score() const { return score_; }
+    // True if this unigram originated from a user-defined phrase (as opposed to
+    // the shipped dictionary). A second-pass re-ranker uses this to avoid
+    // overruling a user phrase by a statistical model score.
+    [[nodiscard]] bool isFromUserPhrase() const { return fromUserPhrase_; }
 
    private:
     std::string value_;
     double score_;
     std::string rawValue_;
+    bool fromUserPhrase_;
   };
 };
 
