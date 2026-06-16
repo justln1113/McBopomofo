@@ -1,0 +1,19 @@
+[project]
+name = "mcbopomofo-rescorer-training"
+version = "0.1.0"
+description = "Char-level LSTM fluency scorer training for the McBopomofo neural rescorer"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.2",
+    "datasets>=2.18",
+    "huggingface-hub>=0.21",
+    "numpy>=1.24",
+    "regex>=2024.0",
+    "tqdm>=4.66",
+]
+
+# Inference is hand-written C++ (no runtime ML dependency); these deps are
+# training-only. Managed with uv: `uv sync` then `uv run python <script>.py`.
+
+[tool.uv]
+# Keep the venv inside this project dir.

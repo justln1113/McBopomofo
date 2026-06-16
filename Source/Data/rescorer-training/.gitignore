@@ -1,0 +1,14 @@
+# uv / venv
+.venv/
+uv.lock
+
+# generated artifacts (data, model, weights)
+corpus*.txt
+vocab.json
+vocab*.txt
+*.pt
+*.bin
+
+# caches
+__pycache__/
+.cache/
