@@ -9,6 +9,10 @@ vocab*.txt
 *.pt
 *.bin
 
+# generated measurement inputs/outputs
+harness_readings.tsv
+*.csv
+
 # caches
 __pycache__/
 .cache/

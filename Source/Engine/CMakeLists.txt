@@ -39,6 +39,11 @@ if (ENABLE_CLANG_TIDY)
     set_target_properties(McBopomofoLMLib PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_COMMAND}")
 endif ()
 
+# Standalone, non-shipped measurement harness: drives the real LM + grid walk +
+# NeuralRescorer over reading sequences and dumps n-best score gaps as CSV.
+add_executable(NBestGapHarness EXCLUDE_FROM_ALL NBestGapHarness.cpp)
+target_link_libraries(NBestGapHarness McBopomofoLMLib gramambular2_lib)
+
 if (ENABLE_EXPERIMENTAL_SIMD_SUPPORT_AVX512)
     include(CheckCXXCompilerFlag)
     check_cxx_compiler_flag("-mavx512f" HAS_AVX512F)
