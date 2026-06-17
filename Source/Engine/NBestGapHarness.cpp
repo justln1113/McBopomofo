@@ -20,6 +20,7 @@
 //       Source/Data/rescorer-weights.bin \
 //       Source/Data/rescorer-vocab.txt > gaps.csv
 
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -86,7 +87,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::printf("sid,cand_idx,is_pick,is_plaintop,n_cand,unigram,model,"
+  std::printf("sid,cand_idx,is_pick,is_plaintop,n_cand,usec,unigram,model,"
               "combined,value,gold\n");
 
   std::string line;
@@ -118,6 +119,8 @@ int main(int argc, char** argv) {
       continue;
     }
 
+    // Time the rescorer-relevant conversion cost: n-best generation + rerank.
+    auto t0 = std::chrono::steady_clock::now();
     std::vector<ReadingGrid::NBestPath> paths = grid.walkNBest(kNBest);
     if (paths.empty()) {
       ++skipped;
@@ -128,6 +131,9 @@ int main(int argc, char** argv) {
     const double lambda = rescorer.lambda();
     std::vector<double> outScores;
     size_t best = rescorer.rerankBestIndex(paths, nullptr, &outScores);
+    auto t1 = std::chrono::steady_clock::now();
+    const auto usec =
+        std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
 
     for (size_t i = 0; i < paths.size(); ++i) {
       const double combined = outScores[i];
@@ -135,9 +141,10 @@ int main(int argc, char** argv) {
       const double mscore = lambda != 0.0 ? (combined - unigram) / lambda : 0.0;
       std::string value;
       for (const auto& v : paths[i].values) value += v;
-      std::printf("%d,%zu,%d,%d,%zu,%.5f,%.5f,%.5f,%s,%s\n", sid, i,
-                  i == best ? 1 : 0, i == 0 ? 1 : 0, paths.size(), unigram,
-                  mscore, combined, value.c_str(), gold.c_str());
+      std::printf("%d,%zu,%d,%d,%zu,%lld,%.5f,%.5f,%.5f,%s,%s\n", sid, i,
+                  i == best ? 1 : 0, i == 0 ? 1 : 0, paths.size(),
+                  (long long)usec, unigram, mscore, combined, value.c_str(),
+                  gold.c_str());
     }
     ++sid;
     ++processed;

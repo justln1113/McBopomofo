@@ -11,7 +11,19 @@ vocab*.txt
 
 # generated measurement inputs/outputs
 harness_readings.tsv
+heldout.txt
+bench_readings.tsv
 *.csv
+
+# downloaded g2pW model (large; fetched on first use)
+G2PWModel/
+
+# scorecards: commit the pinned baselines only; per-run files + log are local
+scorecards/*.json
+scorecards/history.jsonl
+!scorecards/baseline-*.json
+bench_anno.log
+heldout.log
 
 # caches
 __pycache__/

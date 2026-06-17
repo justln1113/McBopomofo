@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=1.24",
     "regex>=2024.0",
     "tqdm>=4.66",
+    "g2pw>=0.1.1",  # eval-only: context-aware zhuyin readings for the IME benchmark
 ]
 
 # Inference is hand-written C++ (no runtime ML dependency); these deps are

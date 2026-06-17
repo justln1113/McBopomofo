@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Fast pre-push regression gate: runs the frozen golden bench through the rescorer
+# pipeline and blocks the push if any stage regressed vs scorecards/baseline-golden.json.
+#
+# Install (local, not version-controlled):
+#   ln -sf ../../Source/Data/rescorer-training/hooks/pre-push \
+#          "$(git rev-parse --git-dir)/hooks/pre-push"
+#
+# Skips gracefully (exit 0) if the venv or the harness binary isn't present, so it
+# never blocks a push just because the eval environment isn't set up on this machine.
+set -uo pipefail
+DIR="$(git rev-parse --show-toplevel)/Source/Data/rescorer-training"
+PY="$DIR/.venv/bin/python"
+HARNESS="$DIR/../../Engine/build/NBestGapHarness"
+
+if [ ! -x "$PY" ] || [ ! -x "$HARNESS" ] || [ ! -f "$DIR/scorecards/baseline-golden.json" ]; then
+  echo "pre-push: rescorer eval env not set up (venv/harness/baseline missing); skipping gate"
+  exit 0
+fi
+
+echo "pre-push: running golden conversion-accuracy gate ..."
+"$PY" "$DIR/eval_scorecard.py" --bench "$DIR/bench/golden.tsv" --label golden >/dev/null || {
+  echo "pre-push: scorecard run failed; skipping gate"; exit 0; }
+"$PY" "$DIR/eval_diff.py" --label golden \
+  --baseline-file "$DIR/scorecards/baseline-golden.json" || {
+  echo "pre-push: BLOCKED — golden bench regressed. Override with 'git push --no-verify'."
+  exit 1; }
