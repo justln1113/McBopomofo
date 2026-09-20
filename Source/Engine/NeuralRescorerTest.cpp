@@ -23,6 +23,7 @@
 
 #include "NeuralRescorer.h"
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <limits>
@@ -367,6 +368,54 @@ TEST(NeuralRescorerTest, PunctuationIsNotReranked) {
   NeuralRescorer rescorer(model, /*lambda=*/100.0);
   std::vector<double> scores;
   ASSERT_EQ(rescorer.rerankBestIndex({top, alt}, nullptr, &scores), 0u);
+  ASSERT_EQ(scores[1], -std::numeric_limits<double>::infinity());
+}
+
+// Mirrors the real failure: 📻 is out of vocabulary, so the LSTM scores it as
+// a single <unk> token (one step, ~-9) while 收音機 pays three steps (~-15).
+// The unigram gap (-8 vs -5) cannot cover that, so the emoji "won".
+class OovCheapModel : public RescorerModel {
+ public:
+  RescorerModelState initialState() override { return {}; }
+
+  std::pair<double, RescorerModelState> step(
+      const RescorerModelState&, const std::string& value,
+      const std::vector<std::string>&) override {
+    return {coversValue(value) ? -5.0 : -9.0, {}};
+  }
+
+  bool coversValue(const std::string& value) const override {
+    // BMP-only vocabulary: any 4-byte UTF-8 sequence (lead byte >= 0xF0,
+    // where emoji live) is out of vocabulary.
+    return std::none_of(value.begin(), value.end(), [](char c) {
+      return static_cast<unsigned char>(c) >= 0xF0;
+    });
+  }
+};
+
+TEST(NeuralRescorerTest, OutOfVocabularyValueCannotWin) {
+  ReadingGrid::NBestPath top;
+  top.values = {"收", "音", "機"};
+  top.readings = {"ㄕㄡ", "ㄧㄣ", "ㄐㄧ"};
+  top.overridden = {false, false, false};
+  top.fromUserPhrase = {false, false, false};
+  top.score = -5.0;
+
+  ReadingGrid::NBestPath emoji;
+  emoji.values = {"📻"};
+  emoji.readings = {"ㄕㄡ-ㄧㄣ-ㄐㄧ"};
+  emoji.overridden = {false};
+  emoji.fromUserPhrase = {false};
+  emoji.score = -8.0;
+
+  auto model = std::make_shared<OovCheapModel>();
+  ASSERT_FALSE(model->coversValue("📻"));
+  ASSERT_TRUE(model->coversValue("收音機"));
+
+  // Without the guard: top = -5 + 3*-5 = -20, emoji = -8 + -9 = -17 -> emoji.
+  NeuralRescorer rescorer(model, /*lambda=*/1.0);
+  std::vector<double> scores;
+  ASSERT_EQ(rescorer.rerankBestIndex({top, emoji}, nullptr, &scores), 0u);
   ASSERT_EQ(scores[1], -std::numeric_limits<double>::infinity());
 }
 

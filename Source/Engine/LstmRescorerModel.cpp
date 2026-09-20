@@ -257,6 +257,15 @@ std::vector<int> LstmRescorerModel::tokenize(const std::string& value) const {
   return ids;
 }
 
+bool LstmRescorerModel::coversValue(const std::string& value) const {
+  for (const std::string& ch : Split(value)) {
+    if (tokenToId_.find(ch) == tokenToId_.end()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void LstmRescorerModel::lstmStep(int tokenId, const float* hPrev,
                                  const float* cPrev, float* hOut,
                                  float* cOut) const {

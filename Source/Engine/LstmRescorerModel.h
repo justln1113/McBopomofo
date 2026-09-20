@@ -77,6 +77,8 @@ class LstmRescorerModel : public RescorerModel {
       const RescorerModelState& prevState, const std::string& nextValue,
       const std::vector<std::string>& homophones) override;
 
+  [[nodiscard]] bool coversValue(const std::string& value) const override;
+
   [[nodiscard]] uint32_t vocabSize() const { return vocab_; }
   [[nodiscard]] uint32_t embedDim() const { return embed_; }
   [[nodiscard]] uint32_t hiddenDim() const { return hidden_; }

@@ -83,6 +83,16 @@ class RescorerModel {
   virtual std::pair<double, RescorerModelState> step(
       const RescorerModelState& prevState, const std::string& nextValue,
       const std::vector<std::string>& homophones) = 0;
+
+  // Whether every character of `value` is in the model's vocabulary. A value
+  // with out-of-vocabulary characters (emoji, rare CJK) is scored as <unk>
+  // tokens -- and an emoji spanning a 3-syllable reading costs one token where
+  // the Han phrase costs three, so its log-prob is not comparable. Models
+  // without a fixed vocabulary (mocks) report true.
+  [[nodiscard]] virtual bool coversValue(const std::string& value) const {
+    (void)value;
+    return true;
+  }
 };
 
 // Re-ranks n-best candidate sentences by combining the grid's unigram score

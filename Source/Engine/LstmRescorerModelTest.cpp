@@ -207,6 +207,15 @@ TEST_F(LstmRescorerModelTest, UnknownCharMapsToUnk) {
   EXPECT_EQ(next.hidden.size(), 2u);
 }
 
+TEST_F(LstmRescorerModelTest, CoversValueReflectsVocabulary) {
+  auto model = Load();
+  EXPECT_TRUE(model->coversValue("甲乙"));
+  EXPECT_FALSE(model->coversValue("\xe9\xbe\x9c"));      // 龜, not in vocab
+  EXPECT_FALSE(model->coversValue("\xf0\x9f\x93\xbb"));  // 📻
+  EXPECT_FALSE(model->coversValue("甲\xf0\x9f\x93\xbb"));
+  EXPECT_TRUE(model->coversValue(""));
+}
+
 // End-to-end through NeuralRescorer: the model should flip the walk's top choice
 // when its sentence-level judgement disagrees -- the whole point of rescoring.
 // Mirrors 依你 (preferred) winning over a higher-unigram 一你.

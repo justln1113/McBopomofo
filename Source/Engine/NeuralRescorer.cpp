@@ -23,6 +23,7 @@
 
 #include "NeuralRescorer.h"
 
+#include <algorithm>
 #include <limits>
 #include <utility>
 
@@ -130,8 +131,14 @@ size_t NeuralRescorer::rerankBestIndex(
   for (size_t i = 0; i < candidates.size(); ++i) {
     const NBestPath& path = candidates[i];
     // A candidate may only differ from the walk's choice in linguistic
-    // (Han) positions; one that swaps a punctuation/symbol value is out.
-    if (i > 0 && SpecialNodes(path) != topSpecialNodes) {
+    // (Han) positions; one that swaps a punctuation/symbol value is out, as
+    // is one carrying a value the model can only score as <unk> (an emoji
+    // standing in for a 3-syllable phrase pays one token instead of three).
+    if (i > 0 && (SpecialNodes(path) != topSpecialNodes ||
+                  !std::all_of(path.values.begin(), path.values.end(),
+                               [this](const std::string& v) {
+                                 return model_->coversValue(v);
+                               }))) {
       if (outScores != nullptr) {
         (*outScores)[i] = -std::numeric_limits<double>::infinity();
       }
