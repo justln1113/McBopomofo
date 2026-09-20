@@ -74,23 +74,6 @@ if (ENABLE_TEST)
                 cmake_policy(SET CMP0135 NEW)
         endif()
 
-        if (NOT GTest_FOUND)
-            # Specify release version from https://github.com/google/googletest/releases
-            set(GTEST_VERSION "v1.14.0")
-            MESSAGE(STATUS "Fetching GoogleTest ${GTEST_VERSION} from GitHub")
-            # Let CMake fetch Google Test for us.
-            # https://github.com/google/googletest/tree/main/googletest#incorporating-into-an-existing-cmake-project
-            include(FetchContent)
-
-            FetchContent_Declare(
-                    googletest
-                    URL "https://github.com/google/googletest/archive/refs/tags/${GTEST_VERSION}.zip"
-            )
-            # For Windows: Prevent overriding the parent project's compiler/linker settings
-            set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-            FetchContent_MakeAvailable(googletest)
-        endif()
-
         # Test target declarations.
         add_executable(McBopomofoLMLibTest
                 AssociatedPhrasesV2Test.cpp
@@ -154,5 +137,24 @@ if (ENABLE_TEST)
                     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ParselessLMBenchmark
             )
             add_dependencies(runParselessLMBenchmark ParselessLMBenchmark)
+
+            add_executable(ParselessPhraseDBBenchmark
+                    ParselessPhraseDBBenchmark.cpp)
+            target_link_libraries(ParselessPhraseDBBenchmark McBopomofoLMLib benchmark::benchmark)
+
+            add_custom_target(
+                    runParselessPhraseDBBenchmark
+                    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ParselessPhraseDBBenchmark
+            )
+            add_dependencies(runParselessPhraseDBBenchmark ParselessPhraseDBBenchmark)
         endif ()
+endif ()
+
+if (ENABLE_ENGINE_PROFILE)
+        add_executable(EngineProfile
+                EngineProfile.cpp)
+        target_link_libraries(EngineProfile
+                McBopomofoLMLib
+                MandarinLib
+                gramambular2_lib)
 endif ()

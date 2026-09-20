@@ -9,11 +9,11 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 PY=.venv/bin/python
-HARNESS=../../Engine/build/NBestGapHarness
+HARNESS=../../build/Engine/NBestGapHarness
 status=0
 
 if [ ! -x "$HARNESS" ]; then
-  echo "build the harness first: cmake --build ../../Engine/build --target NBestGapHarness"
+  echo "build the harness first: cmake --build ../../build --target NBestGapHarness"
   exit 2
 fi
 

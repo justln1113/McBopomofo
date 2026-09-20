@@ -33,7 +33,7 @@ from measure_headroom import load_lexicon
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.normpath(os.path.join(HERE, ".."))
-ENGINE_BUILD = os.path.normpath(os.path.join(HERE, "..", "..", "Engine", "build"))
+ENGINE_BUILD = os.path.normpath(os.path.join(HERE, "..", "..", "build", "Engine"))
 
 
 def cer(pred: str, gold: str) -> tuple[int, int]:

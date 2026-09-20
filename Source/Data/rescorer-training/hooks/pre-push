@@ -11,7 +11,7 @@
 set -uo pipefail
 DIR="$(git rev-parse --show-toplevel)/Source/Data/rescorer-training"
 PY="$DIR/.venv/bin/python"
-HARNESS="$DIR/../../Engine/build/NBestGapHarness"
+HARNESS="$DIR/../../build/Engine/NBestGapHarness"
 
 if [ ! -x "$PY" ] || [ ! -x "$HARNESS" ] || [ ! -f "$DIR/scorecards/baseline-golden.json" ]; then
   echo "pre-push: rescorer eval env not set up (venv/harness/baseline missing); skipping gate"

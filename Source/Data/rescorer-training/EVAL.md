@@ -44,9 +44,11 @@ reachable and dominant.
 ## Run
 
 ```bash
-# build the harness once
-cmake -B ../../Engine/build -S ../../Engine -DCMAKE_BUILD_TYPE=Release
-cmake --build ../../Engine/build --target NBestGapHarness
+# build the harness once (Source/ is the CMake root; the harness lands in build/Engine/).
+# -DCMAKE_DISABLE_FIND_PACKAGE_GTest=ON is only needed if a system GTest (e.g. anaconda's)
+# is picked up but its dylib has no rpath; it forces the FetchContent fallback.
+cmake -B ../../build -S ../.. -DCMAKE_BUILD_TYPE=Release -DENABLE_TEST=1
+cmake --build ../../build --target NBestGapHarness
 
 # (re)generate the held-out tier (network; uses g2pW, downloads G2PWModel once)
 .venv/bin/python gen_heldout.py --target 5000 --out heldout.txt
