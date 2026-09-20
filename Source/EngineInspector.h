@@ -68,6 +68,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic) BOOL hasModelScore;      // NO when rescorer is off/unloaded
 @property(nonatomic) BOOL rescorerPick;       // the path the rescorer selected
 @property(nonatomic) BOOL plainWalkTop;       // index 0 (== plain walk)
+// Disqualified by the rescorer's guards (punctuation swap, out-of-vocabulary
+// value) before scoring; its combined score is not comparable.
+@property(nonatomic) BOOL excluded;
 @end
 
 // The full inspection result for one input.

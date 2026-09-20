@@ -127,6 +127,7 @@
 "unigram" = "unigram";
 "model" = "模型";
 "combined" = "合併";
+"excluded" = "排除";
 
 "Certain Unicode symbols or characters not supported as user phrases." = "您輸入了特殊符號，我們還無法支援在這種狀況下手動加詞。";
 

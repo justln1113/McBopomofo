@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <utility>
@@ -73,6 +74,7 @@
 @synthesize hasModelScore;
 @synthesize rescorerPick;
 @synthesize plainWalkTop;
+@synthesize excluded;
 @end
 
 @implementation EISResult
@@ -383,15 +385,23 @@ std::vector<double> NeuralLogProbs(
   result.rescorerLoaded = (model != nullptr);
 
   std::vector<double> pathModelScores(paths.size(), 0.0);
+  std::vector<double> combinedScores;
   size_t best = 0;
   double lambda = 1.0;
 
   if (model != nullptr && !paths.empty()) {
-    auto start = std::chrono::steady_clock::now();
     McBopomofo::NeuralRescorer rescorer(model);
     lambda = rescorer.lambda();
-    // The engine's actual pick (honors the user-override guard).
-    best = rescorer.rerankBestIndex(paths);
+    // The engine's actual pick (honors the user-override and candidate
+    // guards). Only this call is timed: it is what a keystroke pays for; the
+    // per-path re-scoring below is display-only work.
+    auto start = std::chrono::steady_clock::now();
+    best = rescorer.rerankBestIndex(paths, nullptr, &combinedScores);
+    auto end = std::chrono::steady_clock::now();
+    result.rescoreMicroseconds =
+        (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+            end - start)
+            .count();
     // Independent per-path model scores for display.
     for (size_t i = 0; i < paths.size(); ++i) {
       const auto& values = paths[i].values;
@@ -401,11 +411,6 @@ std::vector<double> NeuralLogProbs(
       }
       pathModelScores[i] = sum;
     }
-    auto end = std::chrono::steady_clock::now();
-    result.rescoreMicroseconds =
-        (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
-            end - start)
-            .count();
     result.rescorerPickIndex = (NSInteger)best;
 
     // Rescored walk (built even when best == 0, so the neural coloring shows).
@@ -445,6 +450,7 @@ std::vector<double> NeuralLogProbs(
       p.modelScore = pathModelScores[i];
       p.combinedScore = paths[i].score + lambda * pathModelScores[i];
       p.rescorerPick = (i == best);
+      p.excluded = i < combinedScores.size() && std::isinf(combinedScores[i]);
     }
     [nbest addObject:p];
   }

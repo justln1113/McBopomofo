@@ -416,6 +416,9 @@ struct RescorerDebugView: View {
                 if path.rescorerPick {
                     Image(systemName: "star.fill").font(.caption2).foregroundStyle(.green)
                 }
+                if path.excluded {
+                    Image(systemName: "nosign").font(.caption2).foregroundStyle(.secondary)
+                }
             }
             .frame(width: 62, alignment: .leading)
             Text(path.values.joined())
@@ -428,11 +431,19 @@ struct RescorerDebugView: View {
                 Text(path.hasModelScore ? String(format: "%.2f", path.modelScore) : "—")
                     .font(.system(.caption, design: .monospaced))
                     .frame(width: 70, alignment: .trailing)
-                Text(path.hasModelScore ? String(format: "%.2f", path.combinedScore) : "—")
-                    .font(.system(.caption, design: .monospaced).bold())
-                    .frame(width: 70, alignment: .trailing)
+                if path.excluded {
+                    Text(NSLocalizedString("excluded", comment: ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 70, alignment: .trailing)
+                } else {
+                    Text(path.hasModelScore ? String(format: "%.2f", path.combinedScore) : "—")
+                        .font(.system(.caption, design: .monospaced).bold())
+                        .frame(width: 70, alignment: .trailing)
+                }
             }
         }
+        .foregroundStyle(path.excluded ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
     }
