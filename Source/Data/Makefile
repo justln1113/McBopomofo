@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: sort clean
+.PHONY: sort clean format typecheck analyze
 
 all: data.txt data-plain-bpmf.txt associated-phrases-v2.txt
 
@@ -19,15 +19,19 @@ rescorer-weights.bin rescorer-vocab.txt: rescorer-training/model.pt rescorer-tra
 		--model model.pt --out ../rescorer-weights.bin
 	cp rescorer-training/vocab.txt rescorer-vocab.txt
 
-data-plain-bpmf.txt: curation/compilers/plain_bpmf_compiler.py BPMFBase.txt BPMFPunctuations.txt
+data-plain-bpmf.txt: curation/compilers/plain_bpmf_compiler.py \
+	curation/compilers/compiler_utils.py \
+	BPMFBase.txt BPMFPunctuations.txt
 	$(PYTHON) -m curation.compilers.plain_bpmf_compiler \
 		--bpmf_base BPMFBase.txt \
 		--punctuations BPMFPunctuations.txt \
 		--output data-plain-bpmf.txt
 
-data.txt: curation/compilers/main_compiler.py BPMFBase.txt BPMFMappings.txt BPMFPunctuations.txt \
-          PhraseFreq.txt phrase.occ Symbols.txt Macros.txt\
-          heterophony1.list heterophony2.list heterophony3.list
+data-raw.txt: curation/compilers/main_compiler.py \
+	curation/compilers/compiler_utils.py \
+	BPMFBase.txt BPMFMappings.txt BPMFPunctuations.txt \
+	PhraseFreq.txt phrase.occ Symbols.txt Macros.txt \
+	heterophony1.list heterophony2.list heterophony3.list
 	$(PYTHON) -m curation.compilers.main_compiler \
 		--heterophony1 heterophony1.list \
 		--heterophony2 heterophony2.list \
@@ -38,6 +42,12 @@ data.txt: curation/compilers/main_compiler.py BPMFBase.txt BPMFMappings.txt BPMF
 		--punctuations BPMFPunctuations.txt \
 		--symbols Symbols.txt \
 		--macros Macros.txt \
+		--output data-raw.txt
+
+data.txt: curation/compilers/postprocess.py curation/mandarin/grid.py data-raw.txt Postprocess.txt
+	$(PYTHON) -m curation.compilers.postprocess \
+		--input data-raw.txt \
+		--directive Postprocess.txt \
 		--output data.txt
 
 associated-phrases-v2.txt: data.txt curation/builders/phrase_deriver.py associated-punctuation.txt
@@ -47,7 +57,7 @@ PhraseFreq.txt: curation/builders/frequency_builder.py phrase.occ exclusion.txt
 	$(PYTHON) -m curation.builders.frequency_builder
 
 clean:
-	rm -f data.txt data-plain-bpmf.txt phrase.list
+	rm -f data.txt data-raw.txt data-plain-bpmf.txt phrase.list
 
 # FOR INTERNAL USE
 _install: tidy sort check all
@@ -72,14 +82,13 @@ sort:
 	@mv tmp heterophony3.list
 	@env LC_ALL=C sort -k1 exclusion.txt|uniq>tmp
 	@mv tmp exclusion.txt
+	@env LC_ALL=C sort -k1 Symbols.txt | uniq | grep -v '^$$' > tmp
+	@mv tmp Symbols.txt
 
 check: SHELL:=/bin/bash
 check: export LC_ALL=C
 check:
-	@awk 'length($$1)/3!=NF-1' BPMFMappings.txt
-	@awk '{print $$2,$$3,$$4,$$5,$$6,$$7}' BPMFMappings.txt | awk '/一/'
-	@diff -u <(awk '{print $$1}' BPMFMappings.txt|sort -u) \
-                 <(awk 'length($$1)>4{print $$1}' phrase.occ|sort -u)
+	@python3 scripts/check.py
 
 tidy:
 	@sed -i '' -e 's/ //g' phrase.occ
@@ -115,3 +124,25 @@ _mycodecheck:
 	@for myfile in curation/*/*.py scripts/*.py; do \
             pycodestyle --ignore=E501,E722,E701,E221,W605 $$myfile; \
         done
+
+format:
+	black \
+		curation/analyzers/find_cover_issues.py \
+		curation/mandarin/*.py \
+		curation/compilers/postprocess.py \
+		curation/utils/lmreader.py \
+		tests/*.py
+
+typecheck:
+	mypy \
+		curation/analyzers/find_cover_issues.py \
+		curation/compilers/postprocess.py
+
+
+ANALYZE_LIMIT = 50
+
+analyze: curation/analyzers/find_cover_issues.py data.txt
+	$(PYTHON) -m curation.analyzers.find_cover_issues \
+		--input data.txt \
+		--limit $(ANALYZE_LIMIT)
+

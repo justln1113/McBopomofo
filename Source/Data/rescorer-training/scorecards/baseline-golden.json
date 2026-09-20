@@ -1,29 +1,29 @@
 {
-  "timestamp": "2026-06-17T20:45:33",
+  "timestamp": "2026-09-21T02:37:14",
   "label": "golden",
-  "git_commit": "f9feb9f",
+  "git_commit": "07166b3",
   "model_sha": "0236dd60099d",
   "bench_sha": "d3050013cf0f",
   "nbest": 5,
   "metrics": {
     "n_sentences": 40,
     "coverage": 0.925,
-    "plain_cer": 0.0358,
-    "plain_sent_acc": 0.725,
+    "plain_cer": 0.0328,
+    "plain_sent_acc": 0.75,
     "oracle_cer": 0.009,
-    "rescored_cer": 0.0269,
-    "rescored_sent_acc": 0.8,
-    "lift_cer": 0.009,
-    "lift_sent_acc": 0.075,
-    "latency_us_p50": 17961,
-    "latency_us_p95": 29399,
+    "rescored_cer": 0.0209,
+    "rescored_sent_acc": 0.85,
+    "lift_cer": 0.0119,
+    "lift_sent_acc": 0.1,
+    "latency_us_p50": 19824,
+    "latency_us_p95": 35532,
     "by_len_rescored_cer": {
       "21+": 0.0,
-      "6-10": 0.0282,
+      "6-10": 0.0219,
       "11-15": 0.0
     },
     "by_hardness_rescored_cer": {
-      "ambiguous": 0.0269
+      "ambiguous": 0.0209
     },
     "invariant_oracle_le_rescored_le_plain": true
   }

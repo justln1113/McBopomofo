@@ -138,6 +138,8 @@ $ _half_punctuation_$ 0.0
 - _half_punctuation__ 0.0
 _ _half_punctuation__ 0.0
 | _half_punctuation_| 0.0
+\ _half_punctuation_| 0.0
+/ _half_punctuation_| 0.0
 , _half_punctuation_Standard_< 0.0
 < _half_punctuation_Standard_< 0.0
 . _half_punctuation_Standard_> 0.0
@@ -233,6 +235,10 @@ _ _half_punctuation_HanyuPinyin__ 0.0
 ─ _punctuation__ 0.0
 │ _punctuation__ 0.0
 – _punctuation__ 0.0
+｜ _punctuation_| 0.0
+＼ _punctuation_| 0.0
+／ _punctuation_| 0.0
+| _punctuation_| 0.0
 ， _punctuation_Standard_< 0.0
 〈 _punctuation_Standard_< 0.0
 《 _punctuation_Standard_< 0.0
