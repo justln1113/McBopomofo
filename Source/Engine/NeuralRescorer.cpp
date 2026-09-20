@@ -32,6 +32,28 @@ namespace {
 // Separator between values when forming a prefix cache key. Uses a control
 // character unlikely to appear in candidate values.
 constexpr char kPrefixKeySeparator = '\x1f';
+
+// Readings that begin with '_' are non-linguistic (punctuation, half-width
+// symbols, macros). Their candidates share a tied score and the dictionary's
+// listing order is the intended default; a fluency model has no meaningful
+// opinion about 『 vs 《, so it must not be allowed to reorder them.
+bool IsSpecialReading(const std::string& reading) {
+  return !reading.empty() && reading.front() == '_';
+}
+
+// The (reading, value) sequence of a path's special-reading nodes, in order.
+// Special nodes always span exactly one reading and never merge into phrases,
+// so this sequence is directly comparable across differently segmented paths.
+std::vector<std::pair<std::string, std::string>> SpecialNodes(
+    const Formosa::Gramambular2::ReadingGrid::NBestPath& path) {
+  std::vector<std::pair<std::string, std::string>> out;
+  for (size_t i = 0; i < path.readings.size() && i < path.values.size(); ++i) {
+    if (IsSpecialReading(path.readings[i])) {
+      out.emplace_back(path.readings[i], path.values[i]);
+    }
+  }
+  return out;
+}
 }  // namespace
 
 double NeuralRescorer::modelScoreForPath(
@@ -103,9 +125,18 @@ size_t NeuralRescorer::rerankBestIndex(
 
   size_t bestIndex = 0;
   double bestScore = -std::numeric_limits<double>::infinity();
+  const auto topSpecialNodes = SpecialNodes(candidates[0]);
 
   for (size_t i = 0; i < candidates.size(); ++i) {
     const NBestPath& path = candidates[i];
+    // A candidate may only differ from the walk's choice in linguistic
+    // (Han) positions; one that swaps a punctuation/symbol value is out.
+    if (i > 0 && SpecialNodes(path) != topSpecialNodes) {
+      if (outScores != nullptr) {
+        (*outScores)[i] = -std::numeric_limits<double>::infinity();
+      }
+      continue;
+    }
     double modelScore = modelScoreForPath(path, homophones);
     double combined = path.score + lambda_ * modelScore;
     if (outScores != nullptr) {

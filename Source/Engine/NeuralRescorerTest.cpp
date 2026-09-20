@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -335,6 +336,57 @@ TEST(NeuralRescorerTest, UserPhraseIsNotReranked) {
   const auto& best = rescorer.rerank(candidates);
   ASSERT_EQ(best.valuesAsStrings(),
             (std::vector<std::string>{"依", "你"}));
+}
+
+// A model that prefers 《 over 『 -- the kind of arbitrary opinion a char LM has
+// about tied punctuation candidates. It must be ignored: punctuation readings
+// are non-linguistic and the dictionary's first listing is the intended pick.
+class BracketPreferringModel : public RescorerModel {
+ public:
+  RescorerModelState initialState() override { return {}; }
+
+  std::pair<double, RescorerModelState> step(
+      const RescorerModelState&, const std::string& value,
+      const std::vector<std::string>&) override {
+    return {value == "《" ? -0.1 : -5.0, {}};
+  }
+};
+
+TEST(NeuralRescorerTest, PunctuationIsNotReranked) {
+  ReadingGrid::NBestPath top;
+  top.values = {"『"};
+  top.readings = {"_punctuation_{"};
+  top.overridden = {false};
+  top.fromUserPhrase = {false};
+  top.score = 0.0;
+
+  ReadingGrid::NBestPath alt = top;
+  alt.values = {"《"};
+
+  auto model = std::make_shared<BracketPreferringModel>();
+  NeuralRescorer rescorer(model, /*lambda=*/100.0);
+  std::vector<double> scores;
+  ASSERT_EQ(rescorer.rerankBestIndex({top, alt}, nullptr, &scores), 0u);
+  ASSERT_EQ(scores[1], -std::numeric_limits<double>::infinity());
+}
+
+TEST(NeuralRescorerTest, HanPositionsStillRerankedAroundPunctuation) {
+  // Punctuation shared by both paths must not block reranking of the Han
+  // positions next to it: 一你，vs 依你，still flips to 依你，.
+  ReadingGrid::NBestPath top;
+  top.values = {"一", "你", "，"};
+  top.readings = {"ㄧ", "ㄋㄧˇ", "_punctuation_,"};
+  top.overridden = {false, false, false};
+  top.fromUserPhrase = {false, false, false};
+  top.score = -5.0;
+
+  ReadingGrid::NBestPath alt = top;
+  alt.values = {"依", "你", "，"};
+  alt.score = -6.0;
+
+  auto model = std::make_shared<RuleBasedMockModel>();
+  NeuralRescorer rescorer(model, /*lambda=*/1.0);
+  ASSERT_EQ(rescorer.rerankBestIndex({top, alt}), 1u);
 }
 
 TEST(NeuralRescorerTest, Timing) {
