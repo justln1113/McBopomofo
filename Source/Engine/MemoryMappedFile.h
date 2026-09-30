@@ -59,7 +59,11 @@ class MemoryMappedFile {
   [[nodiscard]] size_t length() const { return length_; }
 
  private:
-  intptr_t fd_ = -1;           // POSIX file descriptor used by the mmap call
+#ifdef _WIN32
+  intptr_t fd_ = -1;  // CreateFileMapping handle
+#else
+  int fd_ = -1;           // POSIX file descriptor used by the mmap call
+#endif
   void* data_ = nullptr;  // actual mapped data
   size_t length_ = 0;
 };

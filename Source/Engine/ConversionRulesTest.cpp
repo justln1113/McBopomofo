@@ -73,6 +73,40 @@ TEST(ConversionRulesTest, SandhiYiBeforeFourthToneIsKept) {
   EXPECT_EQ(Walk(grid), "一定");
 }
 
+TEST(ConversionRulesTest, SandhiNeedsAFollowingSyllable) {
+  auto lm = MakeLM();
+  lm->add("_letter_A", "A", 0.0);
+  // Nothing typed after ㄧˊ yet: no context, so no demotion.
+  auto grid = Grid(lm, {"ㄧˊ"});
+  ApplyConversionRules(grid, ConversionRules());
+  EXPECT_EQ(Walk(grid), "一");
+  // A letter or punctuation reading is not a syllable either.
+  auto grid2 = Grid(lm, {"ㄧˊ", "_letter_A"});
+  ApplyConversionRules(grid2, ConversionRules());
+  EXPECT_EQ(Walk(grid2), "一A");
+}
+
+TEST(ConversionRulesTest, SandhiFollowsIncrementalEdits) {
+  auto lm = MakeLM();
+  // The grid is updated in place, so a node kept across edits must be
+  // re-evaluated against its new neighbour.
+  auto grid = Grid(lm, {"ㄧˊ"});
+  ApplyConversionRules(grid, ConversionRules());
+  grid.insertReading("ㄓˊ");
+  ApplyConversionRules(grid, ConversionRules());
+  EXPECT_EQ(Walk(grid), "移直");
+  // Replace ㄓˊ by a fourth tone: the demotion of 一 must be undone.
+  ASSERT_TRUE(grid.deleteReadingBeforeCursor());
+  grid.insertReading("ㄉㄧㄥˋ");
+  ApplyConversionRules(grid, ConversionRules());
+  EXPECT_EQ(Walk(grid), "一定");
+  const auto& node = grid.spans()[0].nodeOf(1);
+  ASSERT_NE(node, nullptr);
+  for (const auto& u : node->unigrams()) {
+    if (u.value() == "一") EXPECT_DOUBLE_EQ(u.score(), -2.0);
+  }
+}
+
 TEST(ConversionRulesTest, NeutralPronounsAndSwitches) {
   auto lm = MakeLM();
   auto grid = Grid(lm, {"ㄊㄚ"});

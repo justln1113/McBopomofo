@@ -6,3 +6,4 @@ data.txt
 data-raw.txt
 rescorer-weights.bin
 rescorer-vocab.txt
+transformer-weights.bin

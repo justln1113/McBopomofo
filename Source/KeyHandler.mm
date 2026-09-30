@@ -25,14 +25,20 @@
 #import "LanguageModelManager+Privates.h"
 #import "Mandarin.h"
 #import "McBopomofo-Swift.h"
+#import "ConversionRules.h"
+#import "GuidedRescoring.h"
 #import "LstmRescorerModel.h"
 #import "McBopomofoLM.h"
 #import "NeuralRescorer.h"
+#import "TransformerRescorerModel.h"
 #import "UTF8Helper.h"
 #import "UserOverrideModel.h"
 #import "reading_grid.h"
 
+#import <os/log.h>
+
 #import <algorithm>
+#import <chrono>
 #import <optional>
 #import <sstream>
 #import <string>
@@ -77,6 +83,11 @@ static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
     std::shared_ptr<McBopomofo::LstmRescorerModel> _rescorerModel;
     std::unique_ptr<McBopomofo::NeuralRescorer> _neuralRescorer;
     BOOL _rescorerLoadAttempted;
+    // Transformer LM for generative rescoring (walkGuided). Preferred over the
+    // LSTM re-ranker when bundled; stays null if absent or fails to load, in
+    // which case _walk falls back to the LSTM.
+    std::shared_ptr<McBopomofo::TransformerRescorerModel> _transformerModel;
+    BOOL _transformerLoadAttempted;
     // Cache so repeated _walk calls that don't change the grid state relevant to
     // rescoring (cursor moves, candidate-window navigation) reuse the prior
     // result instead of re-running walkNBest + the model.
@@ -2606,6 +2617,28 @@ static const NSUInteger kUpArrowCandidateSwitchLimit = 4;
     return newState;
 }
 
+- (void)_ensureTransformerLoaded
+{
+    if (_transformerLoadAttempted) {
+        return;
+    }
+    _transformerLoadAttempted = YES;
+    NSBundle *bundle = [NSBundle bundleForClass:[self class]];
+    NSString *weightsPath = [bundle pathForResource:@"transformer-weights" ofType:@"bin"];
+    NSString *vocabPath = [bundle pathForResource:@"rescorer-vocab" ofType:@"txt"];
+    if (weightsPath == nil || vocabPath == nil) {
+        return;
+    }
+    try {
+        _transformerModel = McBopomofo::TransformerRescorerModel::Load(
+            weightsPath.UTF8String, vocabPath.UTF8String);
+        NSLog(@"TransformerRescorer: loaded %@", weightsPath.lastPathComponent);
+    } catch (const std::exception &e) {
+        NSLog(@"TransformerRescorer: failed to load model: %s", e.what());
+        _transformerModel = nullptr;
+    }
+}
+
 // Number of n-best candidate sentences fed to the rescorer. Small: the
 // alternatives that matter (homophone branches) surface in the first few.
 static const size_t kRescorerNBest = 5;
@@ -2637,6 +2670,12 @@ static const size_t kRescorerNBest = 5;
 
 - (void)_walk
 {
+    // Context rules (一/不 tone sandhi, neutral pronouns) are part of the
+    // rescoring feature: they adjust grid scores, so they only run with it on.
+    // Safe to re-apply on every walk (see ConversionRules.h).
+    if (Preferences.neuralRescorerEnabled) {
+        McBopomofo::ApplyConversionRules(*_grid, McBopomofo::ConversionRules());
+    }
     _latestWalk = _grid->walk();
 
     // Second pass: let the neural rescorer re-rank whole-sentence alternatives
@@ -2648,9 +2687,12 @@ static const size_t kRescorerNBest = 5;
     if (!Preferences.neuralRescorerEnabled) {
         return;
     }
-    [self _ensureRescorerLoaded];
-    if (_neuralRescorer == nullptr) {
-        return;
+    [self _ensureTransformerLoaded];
+    if (_transformerModel == nullptr) {
+        [self _ensureRescorerLoaded];
+        if (_neuralRescorer == nullptr) {
+            return;
+        }
     }
 
     // (A) Skip the costly rescore when the grid state it depends on is
@@ -2666,6 +2708,28 @@ static const size_t kRescorerNBest = 5;
     }
     if (_hasRescoreCache && key == _lastRescoreKey) {
         _latestWalk = _lastRescoredWalk;
+        return;
+    }
+
+    if (_transformerModel != nullptr) {
+        // Generative rescoring: the model takes part in lattice expansion, so
+        // pruning already reflects long-range fluency.
+        auto start = std::chrono::steady_clock::now();
+        auto hooks = _transformerModel->MakeGuideHooks(McBopomofo::kGuidedLambda);
+        std::vector<Formosa::Gramambular2::ReadingGrid::NBestPath> paths =
+            _grid->walkGuided(McBopomofo::kGuidedPaths, McBopomofo::kGuidedBeam, McBopomofo::kGuidedHomophones, hooks);
+        size_t chosen = McBopomofo::FirstPathHonouringUserIntent(_latestWalk, paths);
+        bool changed = chosen < paths.size() && paths[chosen].values != _latestWalk.valuesAsStrings();
+        if (changed) {
+            _latestWalk = _grid->walkResultFromPath(paths[chosen]);
+        }
+        long long usec = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count();
+        os_log_debug(OS_LOG_DEFAULT, "TransformerRescorer: walkGuided %zu readings, %lld us, changed=%d",
+                     _grid->length(), usec, changed ? 1 : 0);
+        _lastRescoreKey = std::move(key);
+        _lastRescoredWalk = _latestWalk;
+        _hasRescoreCache = YES;
         return;
     }
 

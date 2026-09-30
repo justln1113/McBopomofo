@@ -16,6 +16,7 @@
 		6A38BC1515FC117A00A8A51F /* data.txt in Resources */ = {isa = PBXBuildFile; fileRef = 6A38BBF615FC117A00A8A51F /* data.txt */; };
 		FA11BAC500000000000B0011 /* rescorer-weights.bin in Resources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0011 /* rescorer-weights.bin */; };
 		FA11BAC500000000000B0012 /* rescorer-vocab.txt in Resources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0012 /* rescorer-vocab.txt */; };
+		FA11BAC500000000000B0013 /* transformer-weights.bin in Resources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0013 /* transformer-weights.bin */; };
 		6A4F5F982879E838008C4307 /* reading_grid.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6A4F5F932879E838008C4307 /* reading_grid.cpp */; };
 		6A660A702EAF371000D53D7B /* ByteBlockBackedDictionary.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6A660A6F2EAF371000D53D7B /* ByteBlockBackedDictionary.cpp */; };
 		6A68C1C32EC7F2C0005284A0 /* Localizable.stringsdict in Resources */ = {isa = PBXBuildFile; fileRef = 6A68C1C12EC7F2C0005284A0 /* Localizable.stringsdict */; };
@@ -53,6 +54,9 @@
 		D41355DB278E6D17005E5CBD /* McBopomofoLM.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D41355D9278E6D17005E5CBD /* McBopomofoLM.cpp */; };
 		FA11BAC500000000000B0001 /* NeuralRescorer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0001 /* NeuralRescorer.cpp */; };
 		FA11BAC500000000000B0003 /* LstmRescorerModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0003 /* LstmRescorerModel.cpp */; };
+		FA11BAC500000000000B0005 /* TransformerRescorerModel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0005 /* TransformerRescorerModel.cpp */; settings = {COMPILER_FLAGS = "-fno-modules"; }; };
+		FA11BAC500000000000B0014 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0014 /* Accelerate.framework */; };
+		FA11BAC500000000000B0007 /* ConversionRules.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA11BAC500000000000C0007 /* ConversionRules.cpp */; };
 		D41355DE278EA3ED005E5CBD /* UserPhrasesLM.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D41355DC278EA3ED005E5CBD /* UserPhrasesLM.cpp */; };
 		D41B626C2B86EAE900583148 /* BopomofoBraille in Frameworks */ = {isa = PBXBuildFile; productRef = D41B626B2B86EAE900583148 /* BopomofoBraille */; };
 		D41B626F2B87B5C100583148 /* ServiceProviderInputHelper.mm in Sources */ = {isa = PBXBuildFile; fileRef = D41B626E2B87B5C100583148 /* ServiceProviderInputHelper.mm */; };
@@ -147,6 +151,8 @@
 		6A38BBF615FC117A00A8A51F /* data.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = data.txt; sourceTree = "<group>"; };
 		FA11BAC500000000000C0011 /* rescorer-weights.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = "rescorer-weights.bin"; sourceTree = "<group>"; };
 		FA11BAC500000000000C0012 /* rescorer-vocab.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = "rescorer-vocab.txt"; sourceTree = "<group>"; };
+		FA11BAC500000000000C0014 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+		FA11BAC500000000000C0013 /* transformer-weights.bin */ = {isa = PBXFileReference; lastKnownFileType = file; path = "transformer-weights.bin"; sourceTree = "<group>"; };
 		6A4F5F912879E838008C4307 /* reading_grid.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = reading_grid.h; sourceTree = "<group>"; };
 		6A4F5F922879E838008C4307 /* language_model.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = language_model.h; sourceTree = "<group>"; };
 		6A4F5F932879E838008C4307 /* reading_grid.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = reading_grid.cpp; sourceTree = "<group>"; };
@@ -208,6 +214,11 @@
 		FA11BAC500000000000C0002 /* NeuralRescorer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NeuralRescorer.h; sourceTree = "<group>"; };
 		FA11BAC500000000000C0003 /* LstmRescorerModel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = LstmRescorerModel.cpp; sourceTree = "<group>"; };
 		FA11BAC500000000000C0004 /* LstmRescorerModel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LstmRescorerModel.h; sourceTree = "<group>"; };
+		FA11BAC500000000000C0005 /* TransformerRescorerModel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = TransformerRescorerModel.cpp; sourceTree = "<group>"; };
+		FA11BAC500000000000C0006 /* TransformerRescorerModel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TransformerRescorerModel.h; sourceTree = "<group>"; };
+		FA11BAC500000000000C0007 /* ConversionRules.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ConversionRules.cpp; sourceTree = "<group>"; };
+		FA11BAC500000000000C0009 /* GuidedRescoring.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GuidedRescoring.h; sourceTree = "<group>"; };
+		FA11BAC500000000000C0008 /* ConversionRules.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ConversionRules.h; sourceTree = "<group>"; };
 		D41355DC278EA3ED005E5CBD /* UserPhrasesLM.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = UserPhrasesLM.cpp; sourceTree = "<group>"; };
 		D41355DD278EA3ED005E5CBD /* UserPhrasesLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = UserPhrasesLM.h; sourceTree = "<group>"; };
 		D41B626A2B86EAD400583148 /* BopomofoBraille */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = BopomofoBraille; path = Packages/BopomofoBraille; sourceTree = "<group>"; };
@@ -292,6 +303,7 @@
 				D4C9CAB127AAC9690058DFEA /* NSStringUtils in Frameworks */,
 				D427F7AE27907B8A004A2160 /* NotifierUI in Frameworks */,
 				D41B626C2B86EAE900583148 /* BopomofoBraille in Frameworks */,
+				FA11BAC500000000000B0014 /* Accelerate.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -398,6 +410,12 @@
 				FA11BAC500000000000C0002 /* NeuralRescorer.h */,
 				FA11BAC500000000000C0003 /* LstmRescorerModel.cpp */,
 				FA11BAC500000000000C0004 /* LstmRescorerModel.h */,
+				FA11BAC500000000000C0005 /* TransformerRescorerModel.cpp */,
+				FA11BAC500000000000C0006 /* TransformerRescorerModel.h */,
+				FA11BAC500000000000C0007 /* ConversionRules.cpp */,
+				FA11BAC500000000000C0008 /* ConversionRules.h */,
+				FA11BAC500000000000C0009 /* GuidedRescoring.h */,
+				FA11BAC500000000000C0014 /* Accelerate.framework */,
 				6ADF5B152BA513E000577D98 /* MemoryMappedFile.cpp */,
 				6ADF5B142BA513E000577D98 /* MemoryMappedFile.h */,
 				6ACC3D422793701600F1B140 /* ParselessLM.cpp */,
@@ -454,6 +472,7 @@
 				6A38BBF615FC117A00A8A51F /* data.txt */,
 				FA11BAC500000000000C0011 /* rescorer-weights.bin */,
 				FA11BAC500000000000C0012 /* rescorer-vocab.txt */,
+				FA11BAC500000000000C0013 /* transformer-weights.bin */,
 				6AD7CBC715FE555000691B5B /* data-plain-bpmf.txt */,
 			);
 			path = Data;
@@ -709,6 +728,7 @@
 				6A38BC1515FC117A00A8A51F /* data.txt in Resources */,
 				FA11BAC500000000000B0011 /* rescorer-weights.bin in Resources */,
 				FA11BAC500000000000B0012 /* rescorer-vocab.txt in Resources */,
+				FA11BAC500000000000B0013 /* transformer-weights.bin in Resources */,
 				6A6ED16B2797650A0012872E /* template-phrases-replacement.txt in Resources */,
 				6AFF97F2253B299E007F1C49 /* NonModalAlertWindowController.xib in Resources */,
 				D4EE675A2B39968900F062DE /* dictionary_service.json in Resources */,
@@ -779,6 +799,8 @@
 				D41355DB278E6D17005E5CBD /* McBopomofoLM.cpp in Sources */,
 				FA11BAC500000000000B0001 /* NeuralRescorer.cpp in Sources */,
 				FA11BAC500000000000B0003 /* LstmRescorerModel.cpp in Sources */,
+				FA11BAC500000000000B0005 /* TransformerRescorerModel.cpp in Sources */,
+				FA11BAC500000000000B0007 /* ConversionRules.cpp in Sources */,
 				D47F7DD3278C1263002F9DD7 /* UserOverrideModel.cpp in Sources */,
 				6A0D4F4515FC0EB100ABF4B3 /* Mandarin.cpp in Sources */,
 				6ACC3D452793701600F1B140 /* ParselessLM.cpp in Sources */,

@@ -39,6 +39,10 @@ add_library(McBopomofoLMLib
         VariantAnnotator.h
         VariantAnnotator.cpp)
 
+if (APPLE)
+    target_link_libraries(McBopomofoLMLib "-framework Accelerate")
+endif ()
+
 if (ENABLE_CLANG_TIDY)
     set_target_properties(McBopomofoLMLib PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_COMMAND}")
 endif ()

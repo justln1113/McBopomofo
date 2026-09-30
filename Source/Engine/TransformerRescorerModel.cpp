@@ -14,6 +14,16 @@
 #include <immintrin.h>
 #endif
 
+#if defined(__APPLE__) && !defined(MCB_RESCORER_NO_ACCELERATE)
+#define MCB_RESCORER_USE_ACCELERATE 1
+#ifndef ACCELERATE_NEW_LAPACK
+#define ACCELERATE_NEW_LAPACK
+#endif
+// Built with -fno-modules in Xcode: the Accelerate module fails to build as a
+// C++ module with the macOS 26.5 SDK (BNNS headers).
+#include <Accelerate/Accelerate.h>
+#endif
+
 #include "UTF8Helper.h"
 
 namespace McBopomofo {
@@ -68,12 +78,6 @@ inline float Dot(const float* a, const float* b, size_t n) {
   for (size_t i = 0; i < n; ++i) sum += a[i] * b[i];
   return sum;
 #endif
-}
-
-// y[r] = b[r] + W[r,:] . x for W of shape [out, in], row-major.
-void MatVec(const float* W, const float* b, const float* x, float* y,
-            size_t out, size_t in) {
-  for (size_t r = 0; r < out; ++r) y[r] = b[r] + Dot(W + r * in, x, in);
 }
 
 void LayerNorm(const float* x, const float* w, const float* b, float* y,
@@ -240,6 +244,20 @@ namespace {
 // is the outer loop so it is read once and reused for all B rows.
 void MatMulBatch(const float* W, const float* bias, const float* X, float* Y,
                  size_t B, size_t out, size_t in) {
+#if defined(MCB_RESCORER_USE_ACCELERATE)
+  // Y = X . W^T + bias via BLAS (AMX on Apple Silicon).
+  for (size_t b = 0; b < B; ++b) std::memcpy(Y + b * out, bias, out * sizeof(float));
+  if (B == 1) {
+    cblas_sgemv(CblasRowMajor, CblasNoTrans, static_cast<int>(out),
+                static_cast<int>(in), 1.0f, W, static_cast<int>(in), X, 1, 1.0f,
+                Y, 1);
+  } else {
+    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, static_cast<int>(B),
+                static_cast<int>(out), static_cast<int>(in), 1.0f, X,
+                static_cast<int>(in), W, static_cast<int>(in), 1.0f, Y,
+                static_cast<int>(out));
+  }
+#else
   for (size_t r = 0; r < out; ++r) {
     const float* w = W + r * in;
     const float br = bias[r];
@@ -247,6 +265,7 @@ void MatMulBatch(const float* W, const float* bias, const float* X, float* Y,
       Y[b * out + r] = br + Dot(w, X + b * in, in);
     }
   }
+#endif
 }
 }  // namespace
 
@@ -359,12 +378,25 @@ void TransformerRescorerModel::logNormalizerBatch(
   if (B == 0) return;
   static thread_local std::vector<float> logits;
   logits.resize(B * vocab_);
+#if defined(MCB_RESCORER_USE_ACCELERATE)
+  // logits[B, V] = out[B, D] . embed^T
+  static thread_local std::vector<float> outs;
+  outs.resize(B * d_);
+  for (size_t b = 0; b < B; ++b) {
+    std::memcpy(&outs[b * d_], nodes[b]->out.data(), d_ * sizeof(float));
+  }
+  cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, static_cast<int>(B),
+              static_cast<int>(vocab_), static_cast<int>(d_), 1.0f, outs.data(),
+              static_cast<int>(d_), embed_.data(), static_cast<int>(d_), 0.0f,
+              logits.data(), static_cast<int>(vocab_));
+#else
   for (size_t t = 0; t < vocab_; ++t) {
     const float* row = embed_.data() + t * d_;
     for (size_t b = 0; b < B; ++b) {
       logits[b * vocab_ + t] = Dot(row, nodes[b]->out.data(), d_);
     }
   }
+#endif
   for (size_t b = 0; b < B; ++b) {
     const float* lg = &logits[b * vocab_];
     float maxLogit = -std::numeric_limits<float>::infinity();
@@ -387,11 +419,18 @@ double TransformerRescorerModel::logNormalizer(TokNode* node) const {
   static thread_local std::vector<float> logits;
   logits.resize(vocab_);
   float maxLogit = -std::numeric_limits<float>::infinity();
+#if defined(MCB_RESCORER_USE_ACCELERATE)
+  cblas_sgemv(CblasRowMajor, CblasNoTrans, static_cast<int>(vocab_),
+              static_cast<int>(d_), 1.0f, embed_.data(), static_cast<int>(d_),
+              node->out.data(), 1, 0.0f, logits.data(), 1);
+  for (size_t t = 0; t < vocab_; ++t) maxLogit = std::max(maxLogit, logits[t]);
+#else
   for (size_t t = 0; t < vocab_; ++t) {
     float l = Dot(embed_.data() + t * d_, node->out.data(), d_);
     logits[t] = l;
     maxLogit = std::max(maxLogit, l);
   }
+#endif
   double sum = 0.0;
   for (size_t t = 0; t < vocab_; ++t) {
     sum += std::exp(static_cast<double>(logits[t] - maxLogit));

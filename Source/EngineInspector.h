@@ -29,7 +29,9 @@ NS_ASSUME_NONNULL_BEGIN
 // SwiftUI debug inspector. It reuses the shared, already-loaded language model
 // and re-runs the same pipeline KeyHandler uses (BopomofoReadingBuffer parse ->
 // ReadingGrid walk -> walkNBest -> NeuralRescorer rerank), returning a plain
-// data tree the UI renders. The engine is never mutated.
+// data tree the UI renders. The engine is never mutated. When the Transformer
+// model is bundled, the pipeline is the generative one instead (ConversionRules
+// -> walk -> walkGuided -> user-intent path selection), as in KeyHandler.
 
 // One candidate value at a grid node.
 @interface EISCandidate : NSObject
@@ -85,6 +87,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong) NSArray<EISPath *> *nBest;
 @property(nonatomic) BOOL rescorerEnabled;
 @property(nonatomic) BOOL rescorerLoaded;
+@property(nonatomic, copy, nullable) NSString *rescorerModelName;  // "Transformer" / "LSTM"
+@property(nonatomic) BOOL rescoreChanged;  // the rescored walk differs from the plain walk
 @property(nonatomic) double lambda;
 @property(nonatomic) NSInteger rescorerPickIndex;
 @property(nonatomic) uint64_t walkMicroseconds;

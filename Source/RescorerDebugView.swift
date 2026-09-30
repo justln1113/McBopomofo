@@ -167,6 +167,9 @@ struct RescorerDebugView: View {
         return HStack(spacing: 14) {
             badge(rescorerState,
                   color: result.rescorerEnabled && result.rescorerLoaded ? .green : .secondary)
+            if let modelName = result.rescorerModelName {
+                badge(modelName, color: .secondary)
+            }
             badge(String(format: NSLocalizedString("walk %llu µs", comment: ""),
                          result.walkMicroseconds), color: .secondary)
             if result.rescorerLoaded {
@@ -201,7 +204,7 @@ struct RescorerDebugView: View {
                     HStack {
                         Text(NSLocalizedString("After Rescoring", comment: ""))
                             .font(.headline)
-                        if result.rescorerPickIndex == 0 {
+                        if !result.rescoreChanged {
                             Text(NSLocalizedString("(unchanged)", comment: ""))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

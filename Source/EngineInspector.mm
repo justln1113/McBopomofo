@@ -23,12 +23,15 @@
 
 #import "EngineInspector.h"
 
+#import "ConversionRules.h"
+#import "GuidedRescoring.h"
 #import "LanguageModelManager+Privates.h"
 #import "LstmRescorerModel.h"
 #import "Mandarin.h"
 #import "McBopomofo-Swift.h"
 #import "McBopomofoLM.h"
 #import "NeuralRescorer.h"
+#import "TransformerRescorerModel.h"
 #import "UserOverrideModel.h"
 #import "reading_grid.h"
 
@@ -88,6 +91,8 @@
 @synthesize nBest;
 @synthesize rescorerEnabled;
 @synthesize rescorerLoaded;
+@synthesize rescorerModelName;
+@synthesize rescoreChanged;
 @synthesize lambda;
 @synthesize rescorerPickIndex;
 @synthesize walkMicroseconds;
@@ -120,6 +125,32 @@ std::shared_ptr<McBopomofo::LstmRescorerModel> SharedRescorerModel() {
                                                    vocabPath.UTF8String);
     } catch (const std::exception& e) {
       NSLog(@"EngineInspector: failed to load rescorer model: %s", e.what());
+      sModel = nullptr;
+    }
+  });
+  return sModel;
+}
+
+// Loads the bundled Transformer model exactly once (same file KeyHandler
+// uses). Returns nullptr if it isn't bundled or fails to load.
+std::shared_ptr<McBopomofo::TransformerRescorerModel> SharedTransformerModel() {
+  static std::shared_ptr<McBopomofo::TransformerRescorerModel> sModel;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    NSBundle* bundle = [NSBundle bundleForClass:[EngineInspector class]];
+    NSString* weightsPath = [bundle pathForResource:@"transformer-weights"
+                                             ofType:@"bin"];
+    NSString* vocabPath = [bundle pathForResource:@"rescorer-vocab"
+                                           ofType:@"txt"];
+    if (weightsPath == nil || vocabPath == nil) {
+      return;
+    }
+    try {
+      sModel = McBopomofo::TransformerRescorerModel::Load(
+          weightsPath.UTF8String, vocabPath.UTF8String);
+    } catch (const std::exception& e) {
+      NSLog(@"EngineInspector: failed to load transformer model: %s",
+            e.what());
       sModel = nullptr;
     }
   });
@@ -309,6 +340,47 @@ std::vector<double> NeuralLogProbs(
   return out;
 }
 
+// Per-block log probs under the Transformer, through the same hooks the
+// guided search uses.
+std::vector<double> TransformerLogProbs(
+    const std::shared_ptr<McBopomofo::TransformerRescorerModel>& model,
+    const std::vector<std::string>& values) {
+  std::vector<double> out;
+  out.reserve(values.size());
+  auto hooks = model->MakeGuideHooks(1.0);
+  std::shared_ptr<void> state = hooks.initialState();
+  for (const auto& v : values) {
+    std::shared_ptr<void> next;
+    out.push_back(hooks.extend(state, v, &next));
+    state = std::move(next);
+  }
+  return out;
+}
+
+NSArray<EISPath*>* BuildPaths(
+    const std::vector<ReadingGrid::NBestPath>& paths) {
+  NSMutableArray<EISPath*>* out =
+      [NSMutableArray arrayWithCapacity:paths.size()];
+  for (const auto& path : paths) {
+    EISPath* p = [[EISPath alloc] init];
+    NSMutableArray<NSString*>* values =
+        [NSMutableArray arrayWithCapacity:path.values.size()];
+    for (const auto& v : path.values) {
+      [values addObject:NSStr(v)];
+    }
+    NSMutableArray<NSString*>* readings =
+        [NSMutableArray arrayWithCapacity:path.readings.size()];
+    for (const auto& r : path.readings) {
+      [readings addObject:NSStr(r)];
+    }
+    p.values = values;
+    p.readings = readings;
+    p.unigramScore = path.score;
+    [out addObject:p];
+  }
+  return out;
+}
+
 }  // namespace
 
 @implementation EngineInspector
@@ -365,6 +437,14 @@ std::vector<double> NeuralLogProbs(
     grid.insertReading(reading);
   }
 
+  result.rescorerEnabled = Preferences.neuralRescorerEnabled;
+  std::shared_ptr<McBopomofo::TransformerRescorerModel> transformer;
+  if (result.rescorerEnabled) {
+    transformer = SharedTransformerModel();
+    // Part of the rescoring feature in KeyHandler; see _walk.
+    McBopomofo::ApplyConversionRules(grid, McBopomofo::ConversionRules());
+  }
+
   // 3. Plain Viterbi walk. Annotate nodes with the live UserOverrideModel's
   //    current suggestions (decay is evaluated against `now`).
   McBopomofo::UserOverrideModel* uom = [LanguageModelManager userOverrideModel];
@@ -373,16 +453,70 @@ std::vector<double> NeuralLogProbs(
   result.walkMicroseconds = walk.elapsedMicroseconds;
   result.plainWalk = BuildNodes(lm, uom, walk, now);
 
+  if (transformer != nullptr) {
+    // 4-5. Generative rescoring, exactly as KeyHandler's _walk. Only the
+    //      search and path selection are timed; the per-block log probs
+    //      below are display-only work.
+    result.rescorerLoaded = YES;
+    result.rescorerModelName = @"Transformer";
+    result.lambda = McBopomofo::kGuidedLambda;
+    auto start = std::chrono::steady_clock::now();
+    auto hooks = transformer->MakeGuideHooks(McBopomofo::kGuidedLambda);
+    std::vector<ReadingGrid::NBestPath> paths =
+        grid.walkGuided(std::max(k, McBopomofo::kGuidedPaths),
+                        McBopomofo::kGuidedBeam,
+                        McBopomofo::kGuidedHomophones, hooks);
+    size_t chosen = McBopomofo::FirstPathHonouringUserIntent(walk, paths);
+    auto end = std::chrono::steady_clock::now();
+    result.rescoreMicroseconds =
+        (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+            end - start)
+            .count();
+
+    const std::vector<std::string> plainValues = walk.valuesAsStrings();
+    NSArray<EISPath*>* nbest = BuildPaths(paths);
+    for (size_t i = 0; i < paths.size(); ++i) {
+      EISPath* p = nbest[i];
+      p.plainWalkTop = (paths[i].values == plainValues);
+      p.hasModelScore = YES;
+      p.combinedScore = paths[i].guidedScore;
+      p.modelScore =
+          (paths[i].guidedScore - paths[i].score) / McBopomofo::kGuidedLambda;
+      p.rescorerPick = (i == chosen);
+    }
+    result.nBest = nbest;
+
+    // No path keeps the user's intent: KeyHandler keeps the plain walk.
+    if (chosen < paths.size()) {
+      result.rescorerPickIndex = (NSInteger)chosen;
+      result.rescoreChanged = (paths[chosen].values != plainValues);
+    }
+    ReadingGrid::WalkResult rescored =
+        result.rescoreChanged ? grid.walkResultFromPath(paths[chosen]) : walk;
+    NSArray<EISNode*>* rescoredNodes = BuildNodes(lm, uom, rescored, now);
+    std::vector<double> segLogProbs =
+        TransformerLogProbs(transformer, rescored.valuesAsStrings());
+    for (NSUInteger i = 0;
+         i < rescoredNodes.count && i < segLogProbs.size(); ++i) {
+      rescoredNodes[i].hasNeuralLogProb = YES;
+      rescoredNodes[i].neuralLogProb = segLogProbs[i];
+    }
+    result.rescoredWalk = rescoredNodes;
+    return result;
+  }
+
   // 4. N-best alternatives.
   std::vector<ReadingGrid::NBestPath> paths = grid.walkNBest(k);
 
-  // 5. Rescore (if enabled and the model is bundled).
-  result.rescorerEnabled = Preferences.neuralRescorerEnabled;
+  // 5. Rescore with the LSTM (if enabled and the model is bundled).
   std::shared_ptr<McBopomofo::LstmRescorerModel> model;
   if (result.rescorerEnabled) {
     model = SharedRescorerModel();
   }
   result.rescorerLoaded = (model != nullptr);
+  if (model != nullptr) {
+    result.rescorerModelName = @"LSTM";
+  }
 
   std::vector<double> pathModelScores(paths.size(), 0.0);
   std::vector<double> combinedScores;
@@ -412,6 +546,7 @@ std::vector<double> NeuralLogProbs(
       pathModelScores[i] = sum;
     }
     result.rescorerPickIndex = (NSInteger)best;
+    result.rescoreChanged = (best != 0);
 
     // Rescored walk (built even when best == 0, so the neural coloring shows).
     ReadingGrid::WalkResult rescored = grid.walkResultFromPath(paths[best]);
