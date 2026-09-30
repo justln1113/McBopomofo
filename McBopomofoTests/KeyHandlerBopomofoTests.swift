@@ -508,8 +508,13 @@ class KeyHandlerBopomofoTests: XCTestCase {
     func testUppercaseLetterWhenNotEmpty2() {
         let current = Preferences.letterBehavior
         Preferences.letterBehavior = 1
+        // With the neural rescorer on, ConversionRules demotes 一 read ㄧˊ
+        // before a letter; this test is about letter handling only.
+        let rescorer = Preferences.neuralRescorerEnabled
+        Preferences.neuralRescorerEnabled = false
         defer {
             Preferences.letterBehavior = current
+            Preferences.neuralRescorerEnabled = rescorer
         }
 
         var state: InputState = InputState.Empty()

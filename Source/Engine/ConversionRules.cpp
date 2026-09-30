@@ -31,13 +31,12 @@ void ApplyConversionRules(Formosa::Gramambular2::ReadingGrid& grid,
   const auto& spans = grid.spans();
   for (size_t i = 0; i < spans.size(); ++i) {
     // Tone sandhi only concerns single-character nodes; dictionary words
-    // carry their own (already correct) readings. It needs a following
-    // syllable: at the end of the buffer or before a letter / punctuation
-    // reading ("_..."), there is no context to judge, so nothing is demoted.
-    const bool hasNext = i + 1 < readings.size() &&
-                         !readings[i + 1].empty() &&
-                         readings[i + 1].front() != '_';
-    const bool nextFourth = hasNext && IsFourthTone(readings[i + 1]);
+    // carry their own (already correct) readings. Nothing after the syllable
+    // (end of buffer, or a letter / punctuation reading) counts as "not a
+    // fourth tone": a lone 一 is read ㄧ, so a typed ㄧˊ there more likely
+    // means 疑 / 移 (same policy as BopoMindFlow).
+    const bool nextFourth =
+        i + 1 < readings.size() && IsFourthTone(readings[i + 1]);
     for (size_t n = 1; n <= spans[i].maxLength(); ++n) {
       const auto& node = spans[i].nodeOf(n);
       if (node == nullptr || node->isOverridden()) continue;
@@ -50,9 +49,8 @@ void ApplyConversionRules(Formosa::Gramambular2::ReadingGrid& grid,
       bool demoteYi = false;
       bool demoteBu = false;
       if (sandhiNode) {
-        demoteYi = hasNext && ((r == kYi2 && !nextFourth) ||
-                               (r == kYi4 && nextFourth));
-        demoteBu = hasNext && r == kBu2 && !nextFourth;
+        demoteYi = (r == kYi2 && !nextFourth) || (r == kYi4 && nextFourth);
+        demoteBu = r == kBu2 && !nextFourth;
       }
       const bool pronouns =
           rules.neutralPronouns && !r.empty() && r.front() != '_';

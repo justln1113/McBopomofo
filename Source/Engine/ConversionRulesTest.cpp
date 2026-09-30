@@ -73,17 +73,17 @@ TEST(ConversionRulesTest, SandhiYiBeforeFourthToneIsKept) {
   EXPECT_EQ(Walk(grid), "一定");
 }
 
-TEST(ConversionRulesTest, SandhiNeedsAFollowingSyllable) {
+TEST(ConversionRulesTest, SandhiTreatsNothingAfterAsNonFourthTone) {
   auto lm = MakeLM();
   lm->add("_letter_A", "A", 0.0);
-  // Nothing typed after ㄧˊ yet: no context, so no demotion.
+  // A lone 一 is read ㄧ, so ㄧˊ at the end of the buffer means 移.
   auto grid = Grid(lm, {"ㄧˊ"});
   ApplyConversionRules(grid, ConversionRules());
-  EXPECT_EQ(Walk(grid), "一");
-  // A letter or punctuation reading is not a syllable either.
+  EXPECT_EQ(Walk(grid), "移");
+  // Likewise before a letter or punctuation reading.
   auto grid2 = Grid(lm, {"ㄧˊ", "_letter_A"});
   ApplyConversionRules(grid2, ConversionRules());
-  EXPECT_EQ(Walk(grid2), "一A");
+  EXPECT_EQ(Walk(grid2), "移A");
 }
 
 TEST(ConversionRulesTest, SandhiFollowsIncrementalEdits) {
@@ -92,6 +92,7 @@ TEST(ConversionRulesTest, SandhiFollowsIncrementalEdits) {
   // re-evaluated against its new neighbour.
   auto grid = Grid(lm, {"ㄧˊ"});
   ApplyConversionRules(grid, ConversionRules());
+  EXPECT_EQ(Walk(grid), "移");
   grid.insertReading("ㄓˊ");
   ApplyConversionRules(grid, ConversionRules());
   EXPECT_EQ(Walk(grid), "移直");

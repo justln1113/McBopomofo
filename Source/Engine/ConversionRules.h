@@ -13,8 +13,9 @@ struct ConversionRules {
   // Demote single-character 一 read ㄧˊ before a non-fourth tone, 一 read ㄧˋ
   // before a fourth tone, and 不 read ㄅㄨˊ before a non-fourth tone: the
   // sandhi cannot apply there, so ㄧˊ ㄓˊ becomes 移植 rather than 一直.
-  // Citation tones (ㄧ, ㄅㄨˋ) and dictionary words are left alone, and so is
-  // a syllable with nothing (or only a letter / punctuation) after it.
+  // Nothing after the syllable (end of buffer, letter, punctuation) counts as
+  // a non-fourth tone. Citation tones (ㄧ, ㄅㄨˋ) and dictionary words are left
+  // alone.
   bool sandhiFilter = true;
   // Demote candidates containing 她 or 妳 so that 他 / 你 win. They stay in
   // the candidate list.
@@ -31,7 +32,8 @@ constexpr double kConversionRulePenalty = -20.0;
 // penalty is left as is, so calling this again after every insertReading /
 // deleteReading is safe. The sandhi demotion is re-evaluated on every call and
 // undone when the following syllable no longer calls for it (the grid keeps
-// nodes across edits). Call it before walk / walkNBest / walkGuided.
+// nodes across edits, e.g. ㄧˊ demoted at the end of the buffer is restored
+// once a fourth tone follows). Call it before walk / walkNBest / walkGuided.
 void ApplyConversionRules(Formosa::Gramambular2::ReadingGrid& grid,
                           const ConversionRules& rules);
 
