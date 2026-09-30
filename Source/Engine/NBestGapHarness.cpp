@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -32,6 +33,8 @@
 #include "LstmRescorerModel.h"
 #include "McBopomofoLM.h"
 #include "NeuralRescorer.h"
+#include "TransformerRescorerModel.h"
+#include "UTF8Helper.h"
 #include "gramambular2/reading_grid.h"
 
 using Formosa::Gramambular2::LanguageModel;
@@ -49,6 +52,26 @@ std::vector<std::string> SplitSpace(const std::string& s) {
   return out;
 }
 
+ReadingGrid::GuideHooks EagerHooks(
+    std::shared_ptr<McBopomofo::LstmRescorerModel> model, double lambda) {
+  ReadingGrid::GuideHooks hooks;
+  hooks.lambda = lambda;
+  hooks.initialState = [model]() -> std::shared_ptr<void> {
+    return std::make_shared<McBopomofo::RescorerModelState>(
+        model->initialState());
+  };
+  hooks.extend = [model](const std::shared_ptr<void>& prev,
+                         const std::string& value,
+                         std::shared_ptr<void>* next) -> double {
+    auto st = std::static_pointer_cast<McBopomofo::RescorerModelState>(prev);
+    auto res = model->step(*st, value, {});
+    *next = std::make_shared<McBopomofo::RescorerModelState>(
+        std::move(res.second));
+    return res.first;
+  };
+  hooks.covers = [model](const std::string& v) { return model->coversValue(v); };
+  return hooks;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -64,6 +87,15 @@ int main(int argc, char** argv) {
   const std::string weightsPath = argv[3];
   const std::string vocabPath = argv[4];
   const size_t kNBest = argc > 5 ? std::stoul(argv[5]) : 5;
+
+  // Generative mode, enabled by env vars so eval_scorecard.py needs no changes:
+  //   GUIDED_BEAM=<width per cell>  GUIDED_HOMO=<unigrams per node>  LAMBDA=<w>
+  const char* envBeam = std::getenv("GUIDED_BEAM");
+  const char* envHomo = std::getenv("GUIDED_HOMO");
+  const char* envLambda = std::getenv("LAMBDA");
+  const size_t guidedBeam = envBeam ? std::stoul(envBeam) : 0;
+  const size_t guidedHomophones = envHomo ? std::stoul(envHomo) : 8;
+  const double guidedLambda = envLambda ? std::stod(envLambda) : 1.0;
 
   auto lm = std::make_shared<McBopomofo::McBopomofoLM>();
   lm->loadLanguageModel(dataPath.c_str());
@@ -81,6 +113,28 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  std::shared_ptr<McBopomofo::TransformerRescorerModel> tfModel;
+  if (const char* tfw = std::getenv("TF_WEIGHTS")) {
+    try {
+      tfModel = McBopomofo::TransformerRescorerModel::Load(tfw, vocabPath);
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "failed to load transformer: %s\n", e.what());
+      return 1;
+    }
+  }
+  if (tfModel && std::getenv("TF_VERIFY")) {
+    // Print sum log P per sentence (gold text, one char per value) and exit.
+    std::ifstream vin(readingsPath);
+    std::string vl;
+    while (std::getline(vin, vl)) {
+      auto tab = vl.find('\t');
+      std::string gold = tab == std::string::npos ? vl : vl.substr(0, tab);
+      std::vector<std::string> chars;
+      for (const auto& c : McBopomofo::Split(gold)) chars.push_back(c);
+      std::printf("%.6f\t%s\n", tfModel->scoreValues(chars), gold.c_str());
+    }
+    return 0;
+  }
   std::ifstream in(readingsPath);
   if (!in) {
     std::fprintf(stderr, "cannot open %s\n", readingsPath.c_str());
@@ -116,6 +170,46 @@ int main(int argc, char** argv) {
     }
     if (!ok) {
       ++skipped;
+      continue;
+    }
+
+    if (guidedBeam > 0) {
+      // Generative mode: candidate 0 is the plain unigram walk (so plain CER is
+      // still measured); the rest come from lattice search guided by the LSTM.
+      auto g0 = std::chrono::steady_clock::now();
+      std::vector<ReadingGrid::NBestPath> plainTop = grid.walkNBest(1);
+      if (plainTop.empty()) {
+        ++skipped;
+        continue;
+      }
+      ReadingGrid::GuideHooks hooks = tfModel ? tfModel->MakeGuideHooks(guidedLambda) : getenv("GUIDED_EAGER")
+          ? EagerHooks(model, guidedLambda)
+          : McBopomofo::LstmRescorerModel::MakeGuideHooks(model, guidedLambda);
+      std::vector<ReadingGrid::NBestPath> gp =
+          grid.walkGuided(kNBest, guidedBeam, guidedHomophones, hooks);
+      auto g1 = std::chrono::steady_clock::now();
+      const auto gusec =
+          std::chrono::duration_cast<std::chrono::microseconds>(g1 - g0)
+              .count();
+      std::vector<ReadingGrid::NBestPath> all;
+      all.push_back(plainTop[0]);
+      for (auto& p : gp) all.push_back(std::move(p));
+      for (size_t i = 0; i < all.size(); ++i) {
+        std::string value;
+        for (const auto& v : all[i].values) value += v;
+        const double unigram = all[i].score;
+        const double combined = i == 0 ? unigram : all[i].guidedScore;
+        const double mscore =
+            i == 0 || guidedLambda == 0.0 ? 0.0
+                                          : (combined - unigram) / guidedLambda;
+        // pick = best guided path (index 1); fall back to plain if none.
+        const bool pick = gp.empty() ? i == 0 : i == 1;
+        std::printf("%d,%zu,%d,%d,%zu,%lld,%.5f,%.5f,%.5f,%s,%s\n", sid, i,
+                    pick ? 1 : 0, i == 0 ? 1 : 0, all.size(), (long long)gusec,
+                    unigram, mscore, combined, value.c_str(), gold.c_str());
+      }
+      ++sid;
+      ++processed;
       continue;
     }
 

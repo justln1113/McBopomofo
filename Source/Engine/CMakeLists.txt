@@ -12,10 +12,14 @@ add_library(McBopomofoLMLib
         AssociatedPhrasesV2.cpp
         ByteBlockBackedDictionary.h
         ByteBlockBackedDictionary.cpp
+        ConversionRules.h
+        ConversionRules.cpp
         McBopomofoLM.cpp
         McBopomofoLM.h
         LstmRescorerModel.h
         LstmRescorerModel.cpp
+    TransformerRescorerModel.h
+    TransformerRescorerModel.cpp
         MemoryMappedFile.h
         MemoryMappedFile.cpp
         NeuralRescorer.h
@@ -78,6 +82,7 @@ if (ENABLE_TEST)
         add_executable(McBopomofoLMLibTest
                 AssociatedPhrasesV2Test.cpp
                 ByteBlockBackedDictionaryTest.cpp
+                ConversionRulesTest.cpp
                 McBopomofoLMTest.cpp
                 LstmRescorerModelTest.cpp
                 MemoryMappedFileTest.cpp

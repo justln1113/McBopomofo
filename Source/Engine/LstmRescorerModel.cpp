@@ -31,6 +31,8 @@
 
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
+#elif defined(__AVX2__) || defined(_M_X64)
+#include <immintrin.h>
 #endif
 
 #include "UTF8Helper.h"
@@ -57,6 +59,30 @@ inline float Dot(const float* a, const float* b, size_t n) {
     acc = vmlaq_f32(acc, vld1q_f32(a + i), vld1q_f32(b + i));
   }
   float sum = vaddvq_f32(acc);
+  for (; i < n; ++i) {
+    sum += a[i] * b[i];
+  }
+  return sum;
+#elif defined(__AVX2__) && (defined(__FMA__) || defined(_MSC_VER)) && \
+    !defined(MCB_RESCORER_FORCE_SCALAR)
+  __m256 acc0 = _mm256_setzero_ps();
+  __m256 acc1 = _mm256_setzero_ps();
+  size_t i = 0;
+  for (; i + 16 <= n; i += 16) {
+    acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i), acc0);
+    acc1 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i + 8),
+                           _mm256_loadu_ps(b + i + 8), acc1);
+  }
+  acc0 = _mm256_add_ps(acc0, acc1);
+  for (; i + 8 <= n; i += 8) {
+    acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i), acc0);
+  }
+  __m128 lo = _mm256_castps256_ps128(acc0);
+  __m128 hi = _mm256_extractf128_ps(acc0, 1);
+  lo = _mm_add_ps(lo, hi);
+  lo = _mm_hadd_ps(lo, lo);
+  lo = _mm_hadd_ps(lo, lo);
+  float sum = _mm_cvtss_f32(lo);
   for (; i < n; ++i) {
     sum += a[i] * b[i];
   }
@@ -366,6 +392,137 @@ std::pair<double, RescorerModelState> LstmRescorerModel::step(
   std::memcpy(next.hidden.data(), h.data(), H * sizeof(float));
   std::memcpy(next.hidden.data() + H, c.data(), H * sizeof(float));
   return {logProb, std::move(next)};
+}
+
+double LstmRescorerModel::logNormalizer(const RescorerModelState& state) const {
+  const size_t H = hidden_;
+  const size_t V = vocab_;
+  const std::vector<float>& s =
+      state.hidden.size() == 2 * H ? state.hidden : initialState_.hidden;
+  static thread_local std::vector<float> logits;
+  logits.resize(V);
+  float maxLogit = -std::numeric_limits<float>::infinity();
+  for (size_t t = 0; t < V; ++t) {
+    float l = projBias_[t] + Dot(projWeight_.data() + t * H, s.data(), H);
+    logits[t] = l;
+    if (l > maxLogit) maxLogit = l;
+  }
+  double sumExp = 0.0;
+  for (size_t t = 0; t < V; ++t) {
+    sumExp += std::exp(static_cast<double>(logits[t] - maxLogit));
+  }
+  return static_cast<double>(maxLogit) + std::log(sumExp);
+}
+
+RescorerModelState LstmRescorerModel::advance(const RescorerModelState& state,
+                                              const std::string& value) const {
+  const size_t H = hidden_;
+  const std::vector<float>& prev =
+      state.hidden.size() == 2 * H ? state.hidden : initialState_.hidden;
+  std::vector<float> h(prev.begin(), prev.begin() + H);
+  std::vector<float> c(prev.begin() + H, prev.begin() + 2 * H);
+  std::vector<float> hN(H), cN(H);
+  for (int id : tokenize(value)) {
+    lstmStep(id, h.data(), c.data(), hN.data(), cN.data());
+    h.swap(hN);
+    c.swap(cN);
+  }
+  RescorerModelState next;
+  next.hidden.resize(2 * H);
+  std::memcpy(next.hidden.data(), h.data(), H * sizeof(float));
+  std::memcpy(next.hidden.data() + H, c.data(), H * sizeof(float));
+  return next;
+}
+
+double LstmRescorerModel::scoreValue(const RescorerModelState& state,
+                                     double stateLogZ,
+                                     const std::string& value,
+                                     RescorerModelState* advanced,
+                                     bool* advancedValid) const {
+  *advancedValid = false;
+  const size_t H = hidden_;
+  std::vector<int> ids = tokenize(value);
+  if (ids.empty()) return 0.0;
+  const std::vector<float>& s =
+      state.hidden.size() == 2 * H ? state.hidden : initialState_.hidden;
+  auto logit = [&](int id, const float* h) {
+    return static_cast<double>(projBias_[static_cast<size_t>(id)]) +
+           Dot(projWeight_.data() + static_cast<size_t>(id) * H, h, H);
+  };
+  double lp = logit(ids[0], s.data()) - stateLogZ;
+  if (ids.size() == 1) return lp;
+
+  // Multi-token value: walk the remaining tokens through the model.
+  std::vector<float> h(s.begin(), s.begin() + H);
+  std::vector<float> c(s.begin() + H, s.begin() + 2 * H);
+  std::vector<float> hN(H), cN(H);
+  lstmStep(ids[0], h.data(), c.data(), hN.data(), cN.data());
+  h.swap(hN);
+  c.swap(cN);
+  for (size_t k = 1; k < ids.size(); ++k) {
+    lp += logSoftmaxFull(ids[k], h.data());
+    lstmStep(ids[k], h.data(), c.data(), hN.data(), cN.data());
+    h.swap(hN);
+    c.swap(cN);
+  }
+  advanced->hidden.resize(2 * H);
+  std::memcpy(advanced->hidden.data(), h.data(), H * sizeof(float));
+  std::memcpy(advanced->hidden.data() + H, c.data(), H * sizeof(float));
+  *advancedValid = true;
+  return lp;
+}
+
+namespace {
+// A beam-search state that is only computed when something extends from it.
+struct LazyState {
+  std::shared_ptr<LazyState> parent;
+  std::string value;  // token(s) that lead from parent to this state
+  bool ready = false;
+  RescorerModelState state;
+  bool hasLogZ = false;
+  double logZ = 0.0;
+};
+}  // namespace
+
+Formosa::Gramambular2::ReadingGrid::GuideHooks
+LstmRescorerModel::MakeGuideHooks(std::shared_ptr<LstmRescorerModel> model,
+                                  double lambda) {
+  Formosa::Gramambular2::ReadingGrid::GuideHooks hooks;
+  hooks.lambda = lambda;
+  hooks.initialState = [model]() -> std::shared_ptr<void> {
+    auto ls = std::make_shared<LazyState>();
+    ls->state = model->initialState();
+    ls->ready = true;
+    return ls;
+  };
+  hooks.extend = [model](const std::shared_ptr<void>& prevRaw,
+                         const std::string& value,
+                         std::shared_ptr<void>* next) -> double {
+    auto prev = std::static_pointer_cast<LazyState>(prevRaw);
+    if (!prev->ready) {
+      prev->state = model->advance(prev->parent->state, prev->value);
+      prev->ready = true;
+      prev->parent.reset();  // free the chain once materialized
+    }
+    if (!prev->hasLogZ) {
+      prev->logZ = model->logNormalizer(prev->state);
+      prev->hasLogZ = true;
+    }
+    auto ls = std::make_shared<LazyState>();
+    bool valid = false;
+    double lp = model->scoreValue(prev->state, prev->logZ, value, &ls->state,
+                                  &valid);
+    if (valid) {
+      ls->ready = true;
+    } else {
+      ls->parent = prev;
+      ls->value = value;
+    }
+    *next = std::move(ls);
+    return lp;
+  };
+  hooks.covers = [model](const std::string& v) { return model->coversValue(v); };
+  return hooks;
 }
 
 }  // namespace McBopomofo

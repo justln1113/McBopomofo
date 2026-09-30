@@ -143,6 +143,13 @@ class ReadingGrid {
 
     bool selectOverrideUnigram(const std::string& value, OverrideType type);
 
+    // Adds delta(unigram) to every unigram's score and re-sorts by score
+    // (stable, highest first). Clears any override. Used by the service for
+    // context-dependent rules (tone sandhi, preferred variants) that the
+    // dictionary alone cannot express.
+    void adjustScores(
+        const std::function<double(const LanguageModel::Unigram&)>& delta);
+
     // A sufficiently high score to cause the walk to go through an overriding
     // node. Although this can be 0, setting it to a positive value has the
     // desirable side effect that it reduces the competition of "free-floating"
@@ -159,7 +166,7 @@ class ReadingGrid {
    protected:
     const std::string reading_;
     const size_t spanningLength_;
-    const std::vector<LanguageModel::Unigram> unigrams_;
+    std::vector<LanguageModel::Unigram> unigrams_;  // mutable only via adjustScores()
     std::vector<LanguageModel::Unigram>::const_iterator unigramIter_;
     OverrideType overrideType_;
   };
@@ -238,6 +245,7 @@ class ReadingGrid {
     // identify every position that carries explicit user intent.
     std::vector<bool> fromUserPhrase;
     double score = 0.0;                 // sum of the chosen unigram scores
+    double guidedScore = 0.0;           // unigram + lambda * model (walkGuided)
 
     [[nodiscard]] const std::vector<std::string>& valuesAsStrings() const {
       return values;
@@ -271,6 +279,37 @@ class ReadingGrid {
   // Note: this ignores node overrides and ranks purely by unigram scores, since
   // its purpose is to enumerate raw alternatives for a rescorer.
   std::vector<NBestPath> walkNBest(size_t k);
+
+  // Hooks that let a second-pass sequence model take part in lattice expansion
+  // ("generative rescoring"). The model state is type-erased so the grid does
+  // not depend on any particular model.
+  struct GuideHooks {
+    // State representing the empty prefix.
+    std::function<std::shared_ptr<void>()> initialState;
+    // Returns log P(value | prev) and writes the advanced state to *next.
+    std::function<double(const std::shared_ptr<void>& prev,
+                         const std::string& value,
+                         std::shared_ptr<void>* next)>
+        extend;
+    // Optional: called with all source states of a lattice cell right before
+    // they are expanded, so a model can materialize them together (batched).
+    std::function<void(const std::vector<std::shared_ptr<void>>&)> prepare;
+    // Optional: false means the model cannot score the value (OOV); such
+    // values are not expanded except at special (punctuation) readings.
+    std::function<bool(const std::string& value)> covers;
+    // combined score = unigram sum + lambda * model log prob.
+    double lambda = 1.0;
+  };
+
+  // Like walkNBest, but every partial path is scored with
+  // unigram + lambda * model during expansion, so pruning already reflects
+  // long-range fluency. beamWidth partial paths are kept per lattice cell and at
+  // most maxHomophones unigrams are tried per node. Returns up to k distinct
+  // full paths by descending combined score (path.score stays the unigram sum;
+  // path.guidedScore holds the combined score).
+  std::vector<NBestPath> walkGuided(size_t k, size_t beamWidth,
+                                    size_t maxHomophones,
+                                    const GuideHooks& hooks);
 
   // Builds a WalkResult equivalent to `path` (e.g. one chosen by a second-pass
   // rescorer from walkNBest), WITHOUT mutating the grid. Each node is a fresh,

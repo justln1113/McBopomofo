@@ -24,9 +24,11 @@
 #include "ParselessLM.h"
 
 #include <fcntl.h>
+#ifndef _WIN32
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
 
 #include <memory>
 #include <string>
@@ -73,7 +75,7 @@ ParselessLM::getUnigrams(const std::string& key) {
     double score = 0;
 
     // Move ahead until we encounter the first space. This is the key.
-    const auto* it = row.begin();
+    auto it = row.begin();
     while (it != row.end() && *it != ' ') {
       ++it;
     }
@@ -87,7 +89,7 @@ ParselessLM::getUnigrams(const std::string& key) {
 
     if (it != row.end()) {
       // Now it is the start of the value portion.
-      const auto* value_begin = it;
+      auto value_begin = it;
 
       // Move ahead until we encounter the second space. This is the
       // value.

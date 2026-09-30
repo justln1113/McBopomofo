@@ -348,6 +348,155 @@ std::vector<ReadingGrid::NBestPath> ReadingGrid::walkNBest(size_t k) {
   return results;
 }
 
+std::vector<ReadingGrid::NBestPath> ReadingGrid::walkGuided(
+    size_t k, size_t beamWidth, size_t maxHomophones,
+    const GuideHooks& hooks) {
+  std::vector<NBestPath> results;
+  if (spans_.empty() || k == 0 || !hooks.initialState || !hooks.extend) {
+    return results;
+  }
+  beamWidth = std::max<size_t>(beamWidth, 1);
+  maxHomophones = std::max<size_t>(maxHomophones, 1);
+
+  struct Entry {
+    double uni = 0.0;    // accumulated unigram score
+    double model = 0.0;  // accumulated model log prob
+    double combined = -std::numeric_limits<double>::infinity();
+    size_t fromIndex = 0;
+    size_t fromBeam = 0;
+    NodePtr node = nullptr;
+    std::string value;
+    bool fromUserPhrase = false;
+    std::shared_ptr<void> state;
+    std::string text;  // concatenated values so far; identical text => same state
+  };
+
+  const size_t readingLen = readings_.size();
+  std::vector<std::vector<Entry>> cells(readingLen + 1);
+  {
+    Entry seed;
+    seed.combined = 0.0;
+    seed.state = hooks.initialState();
+    cells[0].push_back(std::move(seed));
+  }
+
+  // Sort by combined score, drop entries whose text duplicates a better one
+  // (different segmentations of the same characters), keep beamWidth.
+  auto pruneCell = [&](std::vector<Entry>& cell) {
+    std::stable_sort(cell.begin(), cell.end(),
+                     [](const Entry& a, const Entry& b) {
+                       return a.combined > b.combined;
+                     });
+    std::vector<Entry> kept;
+    kept.reserve(std::min(cell.size(), beamWidth));
+    for (auto& e : cell) {
+      if (kept.size() >= beamWidth) break;
+      bool dup = false;
+      for (const auto& q : kept) {
+        if (q.text == e.text) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) kept.push_back(std::move(e));
+    }
+    cell = std::move(kept);
+  };
+
+  for (size_t i = 0; i < readingLen; ++i) {
+    pruneCell(cells[i]);
+    if (cells[i].empty()) continue;
+    if (hooks.prepare) {
+      std::vector<std::shared_ptr<void>> sources;
+      sources.reserve(cells[i].size());
+      for (const auto& e : cells[i]) sources.push_back(e.state);
+      hooks.prepare(sources);
+    }
+
+    const Span& span = spans_[i];
+    const size_t maxSpanLen = span.maxLength();
+    for (size_t spanLen = 1; spanLen <= maxSpanLen; ++spanLen) {
+      const NodePtr& node = span.nodeOf(spanLen);
+      if (node == nullptr) continue;
+      std::vector<Entry>& target = cells[i + spanLen];
+      const bool special =
+          !node->reading().empty() && node->reading().front() == '_';
+
+      // Candidate (value, unigram score, fromUserPhrase) list for this node.
+      struct Choice {
+        std::string value;
+        double score;
+        bool user;
+      };
+      std::vector<Choice> choices;
+      if (node->isOverridden()) {
+        choices.push_back({node->value(), node->score(),
+                           node->currentUnigram().isFromUserPhrase()});
+      } else {
+        const auto& unigrams = node->unigrams();
+        // Punctuation/symbol readings keep the dictionary's default order.
+        const size_t uCount =
+            special ? std::min<size_t>(unigrams.size(), 1)
+                    : std::min(unigrams.size(), maxHomophones);
+        for (size_t u = 0; u < uCount; ++u) {
+          if (!special && hooks.covers && !hooks.covers(unigrams[u].value())) {
+            continue;
+          }
+          choices.push_back({unigrams[u].value(), unigrams[u].score(),
+                             unigrams[u].isFromUserPhrase()});
+        }
+      }
+
+      for (size_t b = 0; b < cells[i].size(); ++b) {
+        const Entry& src = cells[i][b];
+        for (const Choice& c : choices) {
+          Entry e;
+          std::shared_ptr<void> next;
+          const double lp = hooks.extend(src.state, c.value, &next);
+          e.uni = src.uni + c.score;
+          e.model = src.model + lp;
+          e.combined = e.uni + hooks.lambda * e.model;
+          e.fromIndex = i;
+          e.fromBeam = b;
+          e.node = node;
+          e.value = c.value;
+          e.fromUserPhrase = c.user;
+          e.state = std::move(next);
+          e.text = src.text + c.value;
+          target.push_back(std::move(e));
+        }
+      }
+    }
+  }
+
+  pruneCell(cells[readingLen]);
+  for (size_t t = 0; t < cells[readingLen].size() && results.size() < k; ++t) {
+    NBestPath path;
+    size_t curr = readingLen;
+    size_t beam = t;
+    while (curr > 0) {
+      const Entry& entry = cells[curr][beam];
+      if (entry.node == nullptr) break;
+      path.values.push_back(entry.value);
+      path.readings.push_back(entry.node->reading());
+      path.spanningLengths.push_back(entry.node->spanningLength());
+      path.overridden.push_back(entry.node->isOverridden());
+      path.fromUserPhrase.push_back(entry.fromUserPhrase);
+      curr = entry.fromIndex;
+      beam = entry.fromBeam;
+    }
+    std::reverse(path.values.begin(), path.values.end());
+    std::reverse(path.readings.begin(), path.readings.end());
+    std::reverse(path.spanningLengths.begin(), path.spanningLengths.end());
+    std::reverse(path.overridden.begin(), path.overridden.end());
+    std::reverse(path.fromUserPhrase.begin(), path.fromUserPhrase.end());
+    path.score = cells[readingLen][t].uni;
+    path.guidedScore = cells[readingLen][t].combined;
+    results.push_back(std::move(path));
+  }
+  return results;
+}
+
 ReadingGrid::WalkResult ReadingGrid::walkResultFromPath(
     const NBestPath& path) const {
   WalkResult result;
@@ -652,6 +801,27 @@ bool ReadingGrid::Node::selectOverrideUnigram(
     }
   }
   return false;
+}
+
+void ReadingGrid::Node::adjustScores(
+    const std::function<double(const LanguageModel::Unigram&)>& delta) {
+  bool changed = false;
+  for (auto& u : unigrams_) {
+    double d = delta(u);
+    if (d != 0) {
+      u = LanguageModel::Unigram(u.value(), u.score() + d, u.rawValue(),
+                                 u.isFromUserPhrase());
+      changed = true;
+    }
+  }
+  if (changed) {
+    std::stable_sort(unigrams_.begin(), unigrams_.end(),
+                     [](const LanguageModel::Unigram& a,
+                        const LanguageModel::Unigram& b) {
+                       return a.score() > b.score();
+                     });
+  }
+  reset();
 }
 
 std::vector<ReadingGrid::NodePtr>::const_iterator

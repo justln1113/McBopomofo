@@ -24,9 +24,11 @@
 #include "UserPhrasesLM.h"
 
 #include <fcntl.h>
+#ifndef _WIN32
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
 
 #include <fstream>
 #include <string>

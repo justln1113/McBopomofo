@@ -79,6 +79,31 @@ class LstmRescorerModel : public RescorerModel {
 
   [[nodiscard]] bool coversValue(const std::string& value) const override;
 
+  // --- Support for lazy, shared-normalizer beam search (walkGuided) ---
+  //
+  // The full-vocabulary log-sum-exp of the softmax that follows `state`. It
+  // depends only on the state, so all candidates that extend the same state
+  // (the homophones of a node) can share it.
+  [[nodiscard]] double logNormalizer(const RescorerModelState& state) const;
+
+  // log P(value | state) given the precomputed logNormalizer(state). For a
+  // single-token value this is one dot product. For a multi-token value the
+  // model must be advanced through the tokens, so the advanced state is written
+  // to *advanced (which the caller may then treat as ready); it is left untouched
+  // for single-token values.
+  double scoreValue(const RescorerModelState& state, double stateLogZ,
+                    const std::string& value, RescorerModelState* advanced,
+                    bool* advancedValid) const;
+
+  // Advances `state` through `value` without scoring.
+  [[nodiscard]] RescorerModelState advance(const RescorerModelState& state,
+                                           const std::string& value) const;
+
+  // Hooks for ReadingGrid::walkGuided that keep states lazy: a candidate's
+  // state is only materialized when a later expansion actually starts from it.
+  static Formosa::Gramambular2::ReadingGrid::GuideHooks MakeGuideHooks(
+      std::shared_ptr<LstmRescorerModel> model, double lambda);
+
   [[nodiscard]] uint32_t vocabSize() const { return vocab_; }
   [[nodiscard]] uint32_t embedDim() const { return embed_; }
   [[nodiscard]] uint32_t hiddenDim() const { return hidden_; }

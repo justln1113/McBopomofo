@@ -25,6 +25,7 @@
 #define SRC_ENGINE_MEMORYMAPPEDFILE_H_
 
 #include <cstddef>
+#include <cstdint>
 
 namespace McBopomofo {
 
@@ -58,7 +59,7 @@ class MemoryMappedFile {
   [[nodiscard]] size_t length() const { return length_; }
 
  private:
-  int fd_ = -1;           // POSIX file descriptor used by the mmap call
+  intptr_t fd_ = -1;           // POSIX file descriptor used by the mmap call
   void* data_ = nullptr;  // actual mapped data
   size_t length_ = 0;
 };
